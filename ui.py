@@ -1,5 +1,79 @@
 import bpy
 
+def template_propbox(layout, label):
+	col = layout.column(align=True)
+	box = col.box()
+	box.label(label)
+	return col.box()
+
+def layoutDefault(layout, ob):
+	pass
+
+def layoutFuselage(layout, ob):
+	props = ob.fgfs.fuselage
+	
+	layout.label("Weights [kg]")
+	layout.prop(props, 'empty_weight')
+	
+	layout.label("Moments of inertia [kg*m²]")
+	col = layout.column(align=True)
+	col.prop(props, 'ixx')
+	col.prop(props, 'iyy')
+	col.prop(props, 'izz')
+
+def layoutStrut(layout, ob):
+	strut = ob.data.fgfs.strut
+	gear = ob.fgfs.gear
+	
+	instance_info = "(" + str(ob.data.users) + " instances)"
+
+	box = template_propbox(layout, "Strut Options " + instance_info)
+	box.label("Static compression [N*m⁻¹]")
+	row = box.row(align=True)
+	row.alignment = 'LEFT'
+	row.prop(strut, 'spring_coeff', text = "Rate")
+	
+	unit_damping = "[N*m⁻¹*s⁻¹]"
+	unit_damping_sq = "[N*m⁻²*s⁻²]"
+	
+	if strut.damping_coeff_squared:
+		unit = unit_damping_sq
+	else:
+		unit = unit_damping
+	
+	box.label("Damping (compression) " + unit)
+	row = box.row(align=True)
+	row.alignment = 'LEFT'
+	row.prop(strut, 'damping_coeff', text = "Rate")
+	row.prop(strut, 'damping_coeff_squared', text = "Square",
+																					 toggle = True)
+	
+	if strut.damping_coeff_rebound_squared:
+		unit = unit_damping_sq
+	else:
+		unit = unit_damping
+	
+	box.label("Damping (rebound) " + unit)
+	row = box.row(align=True)
+	row.alignment = 'LEFT'
+	row.prop(strut, 'damping_coeff_rebound', text = "Rate")
+	row.prop(strut, 'damping_coeff_rebound_squared', text = "Square",
+																									 toggle = True)
+	
+	box = template_propbox(layout, "Gear Options")
+	box.prop(gear, 'brake_group')
+	box.prop(gear, 'steering_type')
+	if gear.steering_type == 'STEERABLE':
+		box.prop(gear, 'max_steer')
+
+# assign layouts to types
+layouts = {
+	'DEFAULT': layoutDefault,
+	'FUSELAGE': layoutFuselage,
+	'STRUT': layoutStrut,
+	'WHEEL': layoutDefault
+}
+
 class FlightgearPanel(bpy.types.Panel):
 	bl_label = "Flightgear"
 	bl_space_type = "PROPERTIES"
@@ -14,58 +88,10 @@ class FlightgearPanel(bpy.types.Panel):
 	def draw(self, context):
 		layout = self.layout
 		ob = context.active_object
-		props = ob.fgfs
-	
-		layout.prop(props, 'type')
 		
-		if props.type == 'STRUT':
-			props = ob.data.fgfs
-			layout.label("Static compression [N*m⁻¹]")
-			row = layout.row(align=True)
-			row.alignment = 'LEFT'
-			row.prop(props, 'spring_coeff', text = "Rate")
-			
-			unit_damping = "[N*m⁻¹*s⁻¹]"
-			unit_damping_sq = "[N*m⁻²*s⁻²]"
-			
-			if props.damping_coeff_squared:
-				unit = unit_damping_sq
-			else:
-				unit = unit_damping
-			
-			layout.label("Damping (compression) " + unit)
-			row = layout.row(align=True)
-			row.alignment = 'LEFT'
-			row.prop(props, 'damping_coeff', text = "Rate")
-			row.prop(props, 'damping_coeff_squared', text = "Square",
-																							 toggle = True)
-			
-			if props.damping_coeff_rebound_squared:
-				unit = unit_damping_sq
-			else:
-				unit = unit_damping
-			
-			layout.label("Damping (rebound) " + unit)
-			row = layout.row(align=True)
-			row.alignment = 'LEFT'
-			row.prop(props, 'damping_coeff_rebound', text = "Rate")
-			row.prop(props, 'damping_coeff_rebound_squared', text = "Square",
-																											 toggle = True)
-			
-			layout.label("Options")
-			layout.prop(props, 'brake_group')
-			layout.prop(props, 'steering_type')
-			if props.steering_type == 'STEERABLE':
-				layout.prop(props, 'max_steer')
-	
-#	if ob.flightgear_type == 'Gear':
-#	self._drawGear(layout, ob)
-#	elif ob.flightgear_type == 'Aircraft':
-#	self._drawPlaneRoot(layout, ob)
-	
-#	def _drawGear(self, layout, ob):
-#	layout.label('Gear')
-#	
+		layout.prop(ob.fgfs, 'type')
+		layouts[ob.fgfs.type](layout, ob)
+
 #	def _drawPlaneRoot(self, layout, ob):
 #	layout.label('Aircraft')
 #	

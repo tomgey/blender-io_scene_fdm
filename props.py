@@ -1,6 +1,40 @@
 import bpy, math
 
+class FuselageProperties(bpy.types.PropertyGroup):
+	empty_weight = bpy.props.FloatProperty(
+		name = "Empty weight",
+		description = "Total empty weight (without any fuel, cargo, etc.)",
+		subtype = 'UNSIGNED',
+		min = 0,
+		options = {'HIDDEN'}
+	)
+	ixx = bpy.props.FloatProperty(
+		name = "ixx",
+		description = "Moment of inertia arround x-axis",
+		subtype = 'UNSIGNED',
+		min = 0,
+		options = {'HIDDEN'}
+	)
+	iyy = bpy.props.FloatProperty(
+		name = "iyy",
+		description = "Moment of inertia arround y-axis",
+		subtype = 'UNSIGNED',
+		min = 0,
+		options = {'HIDDEN'}
+	)
+	izz = bpy.props.FloatProperty(
+		name = "izz",
+		description = "Moment of inertia arround z-axis",
+		subtype = 'UNSIGNED',
+		min = 0,
+		options = {'HIDDEN'}
+	)
+
 class StrutProperties(bpy.types.PropertyGroup):
+	"""
+	Struts properties are defined per strut (=mesh) whereas gear properties
+	get defined inside the individial instantiated object
+	"""
 	spring_coeff = bpy.props.FloatProperty(
 		name = "Spring coefficient",
 		description = "Spring constant from Hooke's law (Static load/strut displacement = N/m)",
@@ -32,6 +66,12 @@ class StrutProperties(bpy.types.PropertyGroup):
 		description = "Enable squared rebound damping",
 		options = {'HIDDEN'}
 	)
+
+class GearProperties(bpy.types.PropertyGroup):
+	"""
+	Landing gear properties. See StrutProperties for properties of associated
+	strut.
+	"""
 	brake_group = bpy.props.EnumProperty(
 		name = "Brake group",
 		description = "Brake group (Set to None for gears without brake)",
@@ -71,7 +111,11 @@ class StrutProperties(bpy.types.PropertyGroup):
 	)
 
 class MeshProperties(bpy.types.PropertyGroup):
-	pass
+	strut = bpy.props.PointerProperty(
+		type = StrutProperties,
+		name = "Strut",
+		description = "Landing gear strut settings (if type == STRUT)"
+	)
 
 class ObjectProperties(bpy.types.PropertyGroup):
 	type = bpy.props.EnumProperty(
@@ -79,12 +123,24 @@ class ObjectProperties(bpy.types.PropertyGroup):
 		description='Type for object in Flightgear',
 		items = [
 			('DEFAULT', "Default", "Object with no special handling."),
+			('FUSELAGE', "Fuselage", "The fuselage of the plane. Should be centered around center of gravity."),
 			('STRUT', 'Landing Gear Strut', 'Can be rotated while steering and is moved up and down according to compression. Needs at least on wheel as child.'),
 			('WHEEL', 'Wheel', 'Is rotated according to speed while taxiing around. Has to be child of a Landing Gear Strut.')
 		],
 		default='DEFAULT',
 		options = {'HIDDEN'}#,
 		#update = _onTypeChange,
+	)
+	
+	fuselage = bpy.props.PointerProperty(
+		type = FuselageProperties,
+		name = "Fuselage",
+		description = "Fuselage Settings (if type == FUSELAGE)"
+	)
+	gear = bpy.props.PointerProperty(
+		type = GearProperties,
+		name = "Gear",
+		description = "Landing gear settings (if type == STRUT)"
 	)
 
 def register():
@@ -94,7 +150,7 @@ def register():
 		description = "Flightgear Settings"
 	)
 	bpy.types.Mesh.fgfs = bpy.props.PointerProperty(
-		type = StrutProperties,
+		type = MeshProperties,
 		name = "Flightgear",
 		description = "Flightgear Settings"
 	)
