@@ -6,6 +6,14 @@ def template_propbox(layout, label):
 	box.label(label)
 	return col.box()
 
+def box_error(layout, text):
+	box = layout.box()
+	box.label(text, 'ERROR')
+
+def box_info(layout, text):
+	box = layout.box()
+	box.label(text, 'INFO')
+
 def layoutDefault(layout, ob):
 	pass
 
@@ -25,6 +33,12 @@ def layoutStrut(layout, ob):
 	strut = ob.data.fgfs.strut
 	gear = ob.fgfs.gear
 	
+	num_wheels = len([o for o in ob.children if o.fgfs.type == 'WHEEL'])
+	if not num_wheels:
+		box_error(layout, "No wheels attached! (At least one is needed)")
+	else:
+		box_info(layout, str(num_wheels) + " wheels attached.")
+
 	instance_info = "(" + str(ob.data.users) + " instances)"
 
 	box = template_propbox(layout, "Strut Options " + instance_info)
