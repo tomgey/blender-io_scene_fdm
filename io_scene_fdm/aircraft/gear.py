@@ -42,7 +42,8 @@ def parse(ob):
 	contact_point /= num_wheels
 	
 	# move contact point to lowest possible point (== max extention)
-	contact_point.z -= ob.location.z - comp.min_z
+	compression = ob.location.z - comp.min_z
+	contact_point.z -= compression
 	
 	contact_point = ob.matrix_world * contact_point
 	
@@ -53,6 +54,7 @@ def parse(ob):
 	# collect all data
 	gear = {
 		'location': contact_point,
+		'current-compression': compression,
 		'gear': ob.fgfs.gear,
 		'strut': ob.data.fgfs.strut
 	}

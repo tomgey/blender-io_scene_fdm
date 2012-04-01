@@ -55,7 +55,7 @@ class XMLElement(dom.Element):
 				'''
 				fs = '%s'
 				if( type(value) == float ):
-						fs = '%.2f'
+						fs = '%.3f'
 				else:
 						value = str(value)
 

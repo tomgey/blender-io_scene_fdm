@@ -4,6 +4,8 @@ Write aircraft data to file(s)
 @author: tom
 '''
 
+ft2m = 0.3048
+
 import bpy, time, datetime
 from bpy_extras.io_utils import ExportHelper
 from . import aircraft, util
@@ -26,7 +28,9 @@ class Exporter(bpy.types.Operator, ExportHelper):
 			obs.append(ob)
 	
 		ground_reactions = util.XMLDocument('ground_reactions')
+		model = util.XMLDocument('PropertyList')
 	
+		i = 0
 		for ob in [o for o in obs if o.fgfs.type == 'STRUT']:
 			gear = aircraft.gear.parse(ob)
 			c = ground_reactions.createChild('contact')
@@ -50,9 +54,34 @@ class Exporter(bpy.types.Operator, ExportHelper):
 			
 			c.createPropChild('brake_group', gear['gear'].brake_group)
 			c.createPropChild('retractable', 1)
+			
+			a = model.createChild('animation')
+			a.createPropChild('type', 'translate')
+			a.createPropChild('object-name', ob.name)
+			
+			# jsbsim sets compression-norm to compression-ft, so to avoid confusion
+			# we don't use it
+			a.createPropChild('property', 'gear/gear['+str(i)+']/compression-ft')
+			a.createPropChild('offset-m', -gear['current-compression'])
+			a.createPropChild('factor', ft2m)
+			
+			ax = a.createChild('axis')
+			ax.createChild('x', 0)
+			ax.createChild('y', 0)
+			ax.createChild('z', 1)
+			
+			i += 1
+#    <interpolation>
+#      <entry><ind> 0 </ind><dep>  -0.17 </dep></entry>
+#      <entry><ind> 1 </ind><dep>  0.1 </dep></entry>
+#    </interpolation>
 		
 		f = open(self.filepath, 'w')
 		ground_reactions.writexml(f, " ", " ", "\n")
+		f.close()
+		
+		f = open(self.filepath+'.model.xml', 'w')
+		model.writexml(f, " ", " ", "\n")
 		f.close()
 	
 		t = time.mktime(datetime.datetime.now().timetuple()) - t
