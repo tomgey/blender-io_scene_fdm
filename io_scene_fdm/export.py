@@ -4,6 +4,7 @@ Write aircraft data to file(s)
 @author: tom
 '''
 import math, mathutils
+from mathutils import Vector
 from os import path
 
 ft2m = 0.3048
@@ -31,46 +32,74 @@ class AnimationsFGFS:
 		node = 'gear/gear['+str(i)+']/'
 		
 		# Compression
-		a = self._createAnimation(gear['ob'].name, 'translate')
-		a.createPropChild('property', node + 'compression-norm')
-		a.createPropChild('offset-m', -gear['current-compression'])
-		a.createPropChild('factor', ft2m) # TODO check yasim
-		a.createVectorChild('axis', [0,0,1])
+		self.addAnimation(
+			'translate',
+			gear['ob'],
+			node + 'compression-norm',
+			axis = [0,0,1],
+			factor = ft2m, # TODO check yasim
+			offset = -gear['current-compression']
+		)
 		
 		# Steering
 		if gear['gear'].steering_type == 'STEERABLE':
-			a = self._createAnimation(gear['ob'].name, 'rotate')
-			a.createPropChild('property', node + 'steering-norm')
-			a.createPropChild('factor', math.degrees(gear['gear'].max_steer))
-			a.createCenterChild(gear['ob'])
-			a.createVectorChild('axis', [0,0,-1])
+			self.addAnimation(
+				'rotate',
+				gear['ob'],
+				node + 'steering-norm',
+				axis = [0,0,-1],
+				factor = math.degrees(gear['gear'].max_steer)
+			)
 		else:
 			# TODO check CASTERED
 			pass
 		
 		# Wheel spin
-		wheel_names = [w['ob'].name for w in gear['wheels']]
-		a = self._createAnimation(wheel_names, 'spin')
-		a.createPropChild('property', node + 'rollspeed-ms')
-
-		first_wheel = gear['wheels'][0]
-		dist = first_wheel['diameter'] * math.pi
-		a.createPropChild('factor', 60 / dist) # dist per revolution to rpm
-		a.createCenterChild(first_wheel['ob'])
-		a.createVectorChild('axis', [0,-1,0])
+		dist = gear['wheels'][0]['diameter'] * math.pi
+		self.addAnimation(
+			'spin',
+			[w['ob'] for w in gear['wheels']],
+			node + 'rollspeed-ms',
+			axis = [0,-1,0],
+			factor = 60 / dist, # dist per revolution to rpm
+			offset = -gear['current-compression']
+		)
 		
-	def _createAnimation(self, obs, anim_type):
+	def addAnimation(	self,	anim_type, obs, prop,
+											axis = None,
+											factor = None,
+											offset = None ):
 		'''
-		@param obs				Single or list of object names to be animated
 		@param anim_type	Animation type
+		@param obs				Single or list of objects names to be animated
+		@param prop				Property used to control animation
 		'''
 		a = self.model.createChild('animation')
 		a.createPropChild('type', anim_type)
-		if isinstance(obs, str):
-			obs = [obs]
-		for name in obs:
-			a.createPropChild('object-name', name)
 
+		# ensure it's a list
+		if not isinstance(obs, list):
+			obs = [obs]
+		for ob in obs:
+			a.createPropChild('object-name', ob.name)
+
+		a.createPropChild('property', prop)
+
+		if factor != None:
+			a.createPropChild('factor', factor)
+
+		if offset != None:
+			tag = 'offset'
+			if anim_type == 'translate':
+				tag += '-m'
+			a.createPropChild(tag, offset)
+		
+		if anim_type != 'translate':
+			a.createCenterChild(obs[0])
+		
+		if axis != None:
+			a.createVectorChild('axis', axis)
+		
 		return a
 
 class Exporter(bpy.types.Operator, ExportHelper):
@@ -84,63 +113,114 @@ class Exporter(bpy.types.Operator, ExportHelper):
 	def execute(self, context):
 		t = time.mktime(datetime.datetime.now().timetuple())
 		
-		obs = []
+		self.gear_index = 0
+		self.exp_anim = AnimationsFGFS()
+		self.ground_reactions = util.XMLDocument('ground_reactions')
+		
 		for ob in bpy.data.objects:
-			if not ob.is_visible(context.scene) or ob.fgfs.type == 'DEFAULT':
+			if not ob.is_visible(context.scene):
 				continue
-			obs.append(ob)
-	
-		ground_reactions = util.XMLDocument('ground_reactions')
-		exp_anim = AnimationsFGFS()
-	
-		i = 0
-		for ob in [o for o in obs if o.fgfs.type == 'STRUT']:
-			gear = aircraft.gear.parse(ob)
-			c = ground_reactions.createChild('contact')
-			c.setAttribute('type', 'BOGEY')
-			c.setAttribute('name', ob.name)
 			
-			l = c.createChild('location')
-			l.setAttribute('unit', 'M')
-			l.createChild('x', round(gear['location'].x, 3))
-			l.createChild('y', round(gear['location'].y, 3))
-			l.createChild('z', round(gear['location'].z, 3))
+			if ob.fgfs.type == 'STRUT':
+				self.exportGear(ob)
 			
-			c.createPropChild('static_friction', 0.8)
-			c.createPropChild('dynamic_friction', 0.5)
-			c.createPropChild('rolling_friction', 0.02)
-			
-			strut = gear['strut']
-			c.createPropChild('spring_coeff', strut.spring_coeff, 'N/M')
-			c.createPropChild('damping_coeff', strut.damping_coeff, 'N/M/SEC')
-			
-			if gear['gear'].steering_type == 'FIXED':
-				max_steer = 0
-			elif gear['gear'].steering_type == 'CASTERED':
-				max_steer = 360
-			else:
-				max_steer = gear['gear'].max_steer
-			c.createPropChild('max_steer', max_steer, 'DEG')
-			
-			c.createPropChild('brake_group', gear['gear'].brake_group)
-			c.createPropChild('retractable', 1)
-			
-			exp_anim.addGear(gear, i)
-			
-			i += 1
-#    <interpolation>
-#      <entry><ind> 0 </ind><dep>  -0.17 </dep></entry>
-#      <entry><ind> 1 </ind><dep>  0.1 </dep></entry>
-#    </interpolation>
+			self.exportDrivers(ob)
 		
 		f = open(self.filepath, 'w')
-		ground_reactions.writexml(f, " ", " ", "\n")
+		self.ground_reactions.writexml(f, " ", " ", "\n")
 		f.close()
 		
 		file_name = path.splitext(self.filepath)
-		exp_anim.save(file_name[0])
+		self.exp_anim.save(file_name[0])
 	
 		t = time.mktime(datetime.datetime.now().timetuple()) - t
 		print('Finished exporting in', t, 'seconds')
 	
 		return {'FINISHED'}
+	
+	def exportGear(self, ob):
+		gear = aircraft.gear.parse(ob)
+		c = self.ground_reactions.createChild('contact')
+		c.setAttribute('type', 'BOGEY')
+		c.setAttribute('name', ob.name)
+		
+		l = c.createChild('location')
+		l.setAttribute('unit', 'M')
+		l.createChild('x', round(gear['location'].x, 3))
+		l.createChild('y', round(gear['location'].y, 3))
+		l.createChild('z', round(gear['location'].z, 3))
+		
+		c.createPropChild('static_friction', 0.8)
+		c.createPropChild('dynamic_friction', 0.5)
+		c.createPropChild('rolling_friction', 0.02)
+		
+		strut = gear['strut']
+		c.createPropChild('spring_coeff', strut.spring_coeff, 'N/M')
+		c.createPropChild('damping_coeff', strut.damping_coeff, 'N/M/SEC')
+		
+		if gear['gear'].steering_type == 'FIXED':
+			max_steer = 0
+		elif gear['gear'].steering_type == 'CASTERED':
+			max_steer = 360
+		else:
+			max_steer = gear['gear'].max_steer
+		c.createPropChild('max_steer', max_steer, 'DEG')
+		
+		c.createPropChild('brake_group', gear['gear'].brake_group)
+		c.createPropChild('retractable', 1)
+		
+		self.exp_anim.addGear(gear, self.gear_index)
+		self.gear_index += 1
+	
+	def exportDrivers(self, ob):
+		
+		if not ob.animation_data:
+			return
+
+		# object center in world coordinates
+		center = ob.matrix_world.to_translation()
+		
+		for driver in ob.animation_data.drivers:
+			# get the animation axis in world coordinate frame
+			# (vector from center to p2)
+			p2 = Vector([0,0,0])
+			p2[ driver.array_index ] = 1
+			
+			axis = (ob.matrix_world * p2) - center
+			prop = None
+			factor = 1
+			offset = 0
+			
+			for var in driver.driver.variables:
+				if var.type == 'SINGLE_PROP':
+					if len(var.targets) != 1:
+						raise RuntimeError('SINGLE_PROP: wrong target count', var.targets)
+				else:
+					raise RuntimeError('Exporting ' + var.type + ' not supported yet!')
+			
+				tar = var.targets[0]
+				if tar.id_type in ['OBJECT', 'SCENE', 'WORLD']:
+					prop = var.targets[0].data_path.strip('["]')
+			
+			for mod in driver.modifiers:
+				if mod.type != 'GENERATOR':
+					print('Driver: modifier type=' + mod.type + ' not supported yet!')
+					continue
+				
+				if mod.poly_order > 1:
+					print('Driver: polyorder > 1 not supported yet!')
+					continue
+				
+				offset = mod.coefficients[0]
+				if mod.poly_order > 0:
+					factor = mod.coefficients[1]
+			
+			if driver.data_path == 'rotation_euler':
+				self.exp_anim.addAnimation(
+					'rotate',
+					ob,
+					prop = prop,
+					axis = axis,
+					factor = math.degrees(factor),
+					offset = math.degrees(offset)
+				)
