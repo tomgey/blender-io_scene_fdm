@@ -92,6 +92,8 @@ class AnimationsFGFS:
 			tag = 'offset'
 			if anim_type == 'translate':
 				tag += '-m'
+			elif anim_type == 'rotate':
+				tag += '-deg'
 			a.createPropChild(tag, offset)
 		
 		if anim_type != 'translate':
