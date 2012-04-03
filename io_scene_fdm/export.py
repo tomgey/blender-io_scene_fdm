@@ -16,14 +16,12 @@ class AnimationsFGFS:
 	'''Exporter for flightgear animations'''
 	
 	def __init__(self):
-		self.model_files = {
-			'gears': util.XMLDocument('PropertyList')
-		}
+		self.model = util.XMLDocument('PropertyList')
+
 	def save(self, filename):
-		for group, doc in self.model_files.items():
-			f = open(filename + '.' + group + '.xml', 'w')
-			doc.writexml(f, "", "\t", "\n")
-			f.close()
+		f = open(filename + '.model.xml', 'w')
+		self.model.writexml(f, "", "\t", "\n")
+		f.close()
 
 	def addGear(self, gear, i):
 		'''
@@ -33,7 +31,7 @@ class AnimationsFGFS:
 		node = 'gear/gear['+str(i)+']/'
 		
 		# Compression
-		a = self._createAnimation(gear['ob'].name, 'translate', 'gears')
+		a = self._createAnimation(gear['ob'].name, 'translate')
 		a.createPropChild('property', node + 'compression-norm')
 		a.createPropChild('offset-m', -gear['current-compression'])
 		a.createPropChild('factor', ft2m) # TODO check yasim
@@ -41,7 +39,7 @@ class AnimationsFGFS:
 		
 		# Steering
 		if gear['gear'].steering_type == 'STEERABLE':
-			a = self._createAnimation(gear['ob'].name, 'rotate', 'gears')
+			a = self._createAnimation(gear['ob'].name, 'rotate')
 			a.createPropChild('property', node + 'steering-norm')
 			a.createPropChild('factor', math.degrees(gear['gear'].max_steer))
 			a.createCenterChild(gear['ob'])
@@ -52,7 +50,7 @@ class AnimationsFGFS:
 		
 		# Wheel spin
 		wheel_names = [w['ob'].name for w in gear['wheels']]
-		a = self._createAnimation(wheel_names, 'spin', 'gears')
+		a = self._createAnimation(wheel_names, 'spin')
 		a.createPropChild('property', node + 'rollspeed-ms')
 
 		first_wheel = gear['wheels'][0]
@@ -61,13 +59,12 @@ class AnimationsFGFS:
 		a.createCenterChild(first_wheel['ob'])
 		a.createVectorChild('axis', [0,-1,0])
 		
-	def _createAnimation(self, obs, anim_type, category):
+	def _createAnimation(self, obs, anim_type):
 		'''
 		@param obs				Single or list of object names to be animated
 		@param anim_type	Animation type
-		@param category		Category for animation
 		'''
-		a = self.model_files[category].createChild('animation')
+		a = self.model.createChild('animation')
 		a.createPropChild('type', anim_type)
 		if isinstance(obs, str):
 			obs = [obs]
