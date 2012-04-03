@@ -63,6 +63,26 @@ class XMLElement(dom.Element):
 				if len(unit):
 						c.setAttribute('unit', unit)				
 				return c
+			
+		def createVectorChild(self, tag_name, vec, unit_suffix = ''):
+				v = self.createChild(tag_name)
+				v.createPropChild('x' + unit_suffix, vec[0])
+				v.createPropChild('y' + unit_suffix, vec[1])
+				v.createPropChild('z' + unit_suffix, vec[2])
+				
+				return v
+			
+		def createCenterChild(self, ob):
+			'''
+			Create a node with the center of the given object
+			
+			@param ob	Object
+			'''
+			return self.createVectorChild(
+				'center',
+				ob.matrix_world.translation,
+				unit_suffix = '-m'
+			)
 		
 		def writexml(self, writer, indent="", addindent="", newl=""):
 				if (		 len(self.childNodes) == 1
@@ -70,7 +90,6 @@ class XMLElement(dom.Element):
 						writer.write(indent)
 						super().writexml(writer)
 						writer.write(newl)
-
 				else:
 						super().writexml(writer, indent, addindent, newl)
 

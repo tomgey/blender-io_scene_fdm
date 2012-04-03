@@ -53,6 +53,8 @@ def parse(ob):
 	
 	# collect all data
 	gear = {
+		'ob': ob,
+		'wheels': wheels,
 		'location': contact_point,
 		'current-compression': compression,
 		'gear': ob.fgfs.gear,

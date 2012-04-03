@@ -3,12 +3,78 @@ Write aircraft data to file(s)
 
 @author: tom
 '''
+import math, mathutils
+from os import path
 
 ft2m = 0.3048
 
 import bpy, time, datetime
 from bpy_extras.io_utils import ExportHelper
 from . import aircraft, util
+
+class AnimationsFGFS:
+	'''Exporter for flightgear animations'''
+	
+	def __init__(self):
+		self.model_files = {
+			'gears': util.XMLDocument('PropertyList')
+		}
+	def save(self, filename):
+		for group, doc in self.model_files.items():
+			f = open(filename + '.' + group + '.xml', 'w')
+			doc.writexml(f, "", "\t", "\n")
+			f.close()
+
+	def addGear(self, gear, i):
+		'''
+		@param ob_strut	Gear data
+		@param i				Gear index
+		'''
+		node = 'gear/gear['+str(i)+']/'
+		
+		# Compression
+		a = self._createAnimation(gear['ob'].name, 'translate', 'gears')
+		a.createPropChild('property', node + 'compression-norm')
+		a.createPropChild('offset-m', -gear['current-compression'])
+		a.createPropChild('factor', ft2m) # TODO check yasim
+		a.createVectorChild('axis', [0,0,1])
+		
+		# Steering
+		if gear['gear'].steering_type == 'STEERABLE':
+			a = self._createAnimation(gear['ob'].name, 'rotate', 'gears')
+			a.createPropChild('property', node + 'steering-norm')
+			a.createPropChild('factor', math.degrees(gear['gear'].max_steer))
+			a.createCenterChild(gear['ob'])
+			a.createVectorChild('axis', [0,0,-1])
+		else:
+			# TODO check CASTERED
+			pass
+		
+		# Wheel spin
+		wheel_names = [w['ob'].name for w in gear['wheels']]
+		a = self._createAnimation(wheel_names, 'spin', 'gears')
+		a.createPropChild('property', node + 'rollspeed-ms')
+
+		first_wheel = gear['wheels'][0]
+		dist = first_wheel['diameter'] * math.pi
+		a.createPropChild('factor', 60 / dist) # dist per revolution to rpm
+		a.createCenterChild(first_wheel['ob'])
+		a.createVectorChild('axis', [0,-1,0])
+		
+	def _createAnimation(self, obs, anim_type, category):
+		'''
+		@param obs				Single or list of object names to be animated
+		@param anim_type	Animation type
+		@param category		Category for animation
+		'''
+		a = self.model_files[category].createChild('animation')
+		a.createPropChild('type', anim_type)
+		if isinstance(obs, str):
+			obs = [obs]
+		for name in obs:
+			a.createPropChild('object-name', name)
+
+		return a
 
 class Exporter(bpy.types.Operator, ExportHelper):
 	'''Export to Flightgear FDM (.xml)'''
@@ -28,7 +94,7 @@ class Exporter(bpy.types.Operator, ExportHelper):
 			obs.append(ob)
 	
 		ground_reactions = util.XMLDocument('ground_reactions')
-		model = util.XMLDocument('PropertyList')
+		exp_anim = AnimationsFGFS()
 	
 		i = 0
 		for ob in [o for o in obs if o.fgfs.type == 'STRUT']:
@@ -50,25 +116,19 @@ class Exporter(bpy.types.Operator, ExportHelper):
 			strut = gear['strut']
 			c.createPropChild('spring_coeff', strut.spring_coeff, 'N/M')
 			c.createPropChild('damping_coeff', strut.damping_coeff, 'N/M/SEC')
-			c.createPropChild('max_steer', 60, 'DEG')
+			
+			if gear['gear'].steering_type == 'FIXED':
+				max_steer = 0
+			elif gear['gear'].steering_type == 'CASTERED':
+				max_steer = 360
+			else:
+				max_steer = gear['gear'].max_steer
+			c.createPropChild('max_steer', max_steer, 'DEG')
 			
 			c.createPropChild('brake_group', gear['gear'].brake_group)
 			c.createPropChild('retractable', 1)
 			
-			a = model.createChild('animation')
-			a.createPropChild('type', 'translate')
-			a.createPropChild('object-name', ob.name)
-			
-			# jsbsim sets compression-norm to compression-ft, so to avoid confusion
-			# we don't use it
-			a.createPropChild('property', 'gear/gear['+str(i)+']/compression-ft')
-			a.createPropChild('offset-m', -gear['current-compression'])
-			a.createPropChild('factor', ft2m)
-			
-			ax = a.createChild('axis')
-			ax.createChild('x', 0)
-			ax.createChild('y', 0)
-			ax.createChild('z', 1)
+			exp_anim.addGear(gear, i)
 			
 			i += 1
 #    <interpolation>
@@ -80,9 +140,8 @@ class Exporter(bpy.types.Operator, ExportHelper):
 		ground_reactions.writexml(f, " ", " ", "\n")
 		f.close()
 		
-		f = open(self.filepath+'.model.xml', 'w')
-		model.writexml(f, " ", " ", "\n")
-		f.close()
+		file_name = path.splitext(self.filepath)
+		exp_anim.save(file_name[0])
 	
 		t = time.mktime(datetime.datetime.now().timetuple()) - t
 		print('Finished exporting in', t, 'seconds')
