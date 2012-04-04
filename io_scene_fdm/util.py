@@ -5,6 +5,22 @@ Created on 10.12.2011
 '''
 import xml.dom.minidom as dom
 
+def float2str(val, max_acc = 3):
+	'''
+	@param val			The value
+	@param max_acc	Maximum accuracy
+	'''
+	val_rounded = round(val, max_acc)
+	acc = max_acc
+	while acc > 0:
+		if abs(val_rounded - round(val, acc - 1)) > 0:
+			return str(val_rounded)
+		
+		acc -= 1
+		val_rounded = round(val, acc)
+
+	return str(int(val_rounded))
+
 class XMLDocument(dom.Document):
 		'''
 		XML helper class to simplify dom creation
@@ -53,13 +69,12 @@ class XMLElement(dom.Element):
 				Create a xml element representing a (numeric) property with an optional
 				unit attribute
 				'''
-				fs = '%s'
 				if( type(value) == float ):
-						fs = '%.3f'
+						value = float2str(value)
 				else:
 						value = str(value)
 
-				c = self.createChild(tag_name, fs % value)
+				c = self.createChild(tag_name, value)
 				if len(unit):
 						c.setAttribute('unit', unit)				
 				return c

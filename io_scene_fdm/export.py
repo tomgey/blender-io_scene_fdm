@@ -65,6 +65,13 @@ class AnimationsFGFS:
 			offset = -gear['current-compression']
 		)
 		
+		# Tyre smoke
+		m = self.model.createChild('model')
+		m.createPropChild('path', "Aircraft/Generic/Effects/tyre-smoke.xml")
+		p = m.createChild('overlay').createChild('params')
+		p.createPropChild('property', node + 'tyre-smoke')
+		m.createVectorChild('offsets', gear['location'], '-m')
+	
 	def addAnimation(	self,	anim_type, obs, prop,
 											axis = None,
 											factor = None,
@@ -154,11 +161,8 @@ class Exporter(bpy.types.Operator, ExportHelper):
 		c.setAttribute('type', 'BOGEY')
 		c.setAttribute('name', ob.name)
 		
-		l = c.createChild('location')
+		l = c.createVectorChild('location', gear['location'])
 		l.setAttribute('unit', 'M')
-		l.createChild('x', round(gear['location'].x, 3))
-		l.createChild('y', round(gear['location'].y, 3))
-		l.createChild('z', round(gear['location'].z, 3))
 		
 		c.createPropChild('static_friction', 0.8)
 		c.createPropChild('dynamic_friction', 0.5)
@@ -230,7 +234,7 @@ class Exporter(bpy.types.Operator, ExportHelper):
 					
 					factor = mod.coefficients[1]
 					
-					# we don't need to get the offset coeeficient as blender already has
+					# we don't need to get the offset coefficient as blender already has
 					# applied it to the model for us. We need just to remove the offset
 					# introduced by the current value of the property (if not zero)
 					offset = -tar.id[prop] * factor
