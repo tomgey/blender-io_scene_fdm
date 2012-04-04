@@ -68,7 +68,8 @@ class AnimationsFGFS:
 	def addAnimation(	self,	anim_type, obs, prop,
 											axis = None,
 											factor = None,
-											offset = None ):
+											offset = None,
+											table = None ):
 		'''
 		@param anim_type	Animation type
 		@param obs				Single or list of objects names to be animated
@@ -95,6 +96,13 @@ class AnimationsFGFS:
 			elif anim_type == 'rotate':
 				tag += '-deg'
 			a.createPropChild(tag, offset)
+			
+		if table != None:
+			tab = a.createChild('interpolation')
+			for entry in table:
+				e = tab.createChild('entry')
+				e.createPropChild('ind', entry[0])
+				e.createPropChild('dep', entry[1])
 		
 		if anim_type != 'translate':
 			a.createCenterChild(obs[0])
@@ -192,6 +200,7 @@ class Exporter(bpy.types.Operator, ExportHelper):
 			prop = None
 			factor = 1
 			offset = 0
+			table = None
 			
 			for var in driver.driver.variables:
 				if var.type == 'SINGLE_PROP':
@@ -204,25 +213,56 @@ class Exporter(bpy.types.Operator, ExportHelper):
 				if tar.id_type in ['OBJECT', 'SCENE', 'WORLD']:
 					prop = var.targets[0].data_path.strip('["]')
 			
-			for mod in driver.modifiers:
-				if mod.type != 'GENERATOR':
-					print('Driver: modifier type=' + mod.type + ' not supported yet!')
-					continue
-				
-				if mod.poly_order > 1:
-					print('Driver: polyorder > 1 not supported yet!')
-					continue
-				
-				offset = mod.coefficients[0]
-				if mod.poly_order > 0:
-					factor = mod.coefficients[1]
+			if not prop:
+				raise RuntimeError('No property!')
 			
+			if len(driver.keyframe_points):
+				table = [k.co for k in driver.keyframe_points]
+			else:
+				for mod in driver.modifiers:
+					if mod.type != 'GENERATOR':
+						print('Driver: modifier type=' + mod.type + ' not supported yet!')
+						continue
+					
+					if mod.poly_order != 1:
+						print('Driver: polyorder != 1 not supported yet!')
+						continue
+					
+					factor = mod.coefficients[1]
+					
+					# we don't need to get the offset coeeficient as blender already has
+					# applied it to the model for us. We need just to remove the offset
+					# introduced by the current value of the property (if not zero)
+					offset = -tar.id[prop] * factor
+				
 			if driver.data_path == 'rotation_euler':
+				if table:
+					of = ob.rotation_euler[ driver.array_index ]
+					table = [[k[0], round(math.degrees(k[1] - of), 1)] for k in table]
+				else:
+					factor = math.degrees(factor)
+					offset = math.degrees(offset)
+				anim_type = 'rotate'
+			elif driver.data_path == 'location':
+				anim_type = 'translate'
+			else:
+				print('Exporting ' + driver.data_path + ' not supported yet!')
+				continue
+			
+			if table:
 				self.exp_anim.addAnimation(
-					'rotate',
+					anim_type,
+					ob,
+					axis = axis,
+					prop = prop,
+					table = table
+				)
+			else:
+				self.exp_anim.addAnimation(
+					anim_type,
 					ob,
 					prop = prop,
 					axis = axis,
-					factor = math.degrees(factor),
-					offset = math.degrees(offset)
+					factor = factor,
+					offset = offset
 				)

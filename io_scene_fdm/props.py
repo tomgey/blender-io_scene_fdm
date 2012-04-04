@@ -116,6 +116,42 @@ class MeshProperties(bpy.types.PropertyGroup):
 		name = "Strut",
 		description = "Landing gear strut settings (if type == STRUT)"
 	)
+	
+
+# ------------------------------------------------------------------------------
+properties = {
+	'DEFAULT': {},
+	'FUSELAGE': {
+		'/surface-positions/elevator-pos-norm': [-1, 1],
+		'/surface-positions/rudder-pos-norm': [-1, 1],
+		'/surface-positions/left-aileron-pos-norm': [-1, 1],
+		'/surface-positions/right-aileron-pos-norm': [-1, 1],
+		'/surface-positions/flap-pos-norm': [0, 1],
+	},
+	'STRUT': {
+		'gear/position-norm': [0, 1],
+		'gear/steering-norm': [-1, 1]
+	},
+	'WHEEL': {}
+}
+
+def _onTypeChange(self, context):
+	ob = self.id_data
+	for cat, props in properties.items():
+		if cat == self.type:
+			for prop, dom in props.items():
+				ob[prop] = 0
+				ob['_RNA_UI'][prop] = {
+					'min': dom[0],
+					'max': dom[1]
+				}
+		else:
+			# remove values from other categories
+			for prop in props.keys():
+				try:	del ob[prop]
+				except:		pass
+				try: del ob['_RNA_UI'][prop]
+				except: pass
 
 class ObjectProperties(bpy.types.PropertyGroup):
 	type = bpy.props.EnumProperty(
@@ -128,8 +164,8 @@ class ObjectProperties(bpy.types.PropertyGroup):
 			('WHEEL', 'Wheel', 'Is rotated according to speed while taxiing around. Has to be child of a Landing Gear Strut.')
 		],
 		default='DEFAULT',
-		options = {'HIDDEN'}#,
-		#update = _onTypeChange,
+		options = {'HIDDEN'},
+		update = _onTypeChange
 	)
 	
 	fuselage = bpy.props.PointerProperty(
