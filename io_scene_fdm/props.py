@@ -33,7 +33,7 @@ class FuselageProperties(bpy.types.PropertyGroup):
 class StrutProperties(bpy.types.PropertyGroup):
 	"""
 	Struts properties are defined per strut (=mesh) whereas gear properties
-	get defined inside the individial instantiated object
+	get defined inside the individual instantiated object
 	"""
 	spring_coeff = bpy.props.FloatProperty(
 		name = "Spring coefficient",
@@ -110,13 +110,52 @@ class GearProperties(bpy.types.PropertyGroup):
 		options = {'HIDDEN'}
 	)
 
+class TankProperties(bpy.types.PropertyGroup):
+	"""
+	Properties for tanks containing consumable liquids and gases (fuel, oxygen,
+	etc.)
+	"""
+	content = bpy.props.EnumProperty(
+		name = 'Content',
+		description='Type of content.',
+		items = [
+			('FUEL', "Fuel", "Fuel consumed by the engines."),
+			('OXYGEN', "Oxygen", "Liquid oxygen consumable by the crew.")
+		],
+		default = 'FUEL',
+		options = {'HIDDEN'}
+	)
+	capacity = bpy.props.FloatProperty(
+		name = "Capacity",
+		description = "Tank capacity [m³ for Fuel, l (dm³) for Oxygen]",
+		subtype = 'UNSIGNED',
+		min = 0,
+		options = {'HIDDEN'}
+	)
+	unusable = bpy.props.FloatProperty(
+		name = "Unusable",
+		description = "Unusable tank capacity [%]",
+		subtype = 'UNSIGNED',
+		min = 0,
+		max = 50,
+		options = {'HIDDEN'}
+	)
+	level = bpy.props.FloatProperty(
+		name = "Fill level",
+		description = "Current fill level [%]",
+		subtype = 'UNSIGNED',
+		min = 0,
+		max = 100,
+		options = {'HIDDEN'}
+	)
+
+
 class MeshProperties(bpy.types.PropertyGroup):
 	strut = bpy.props.PointerProperty(
 		type = StrutProperties,
 		name = "Strut",
 		description = "Landing gear strut settings (if type == STRUT)"
 	)
-	
 
 # ------------------------------------------------------------------------------
 properties = {
@@ -132,7 +171,9 @@ properties = {
 		'gear/position-norm': [0, 1],
 		'gear/steering-norm': [-1, 1]
 	},
-	'WHEEL': {}
+	'WHEEL': {},
+	'PICKABLE': {},
+	'CONSUMABLE': {},
 }
 
 def _onTypeChange(self, context):
@@ -160,8 +201,10 @@ class ObjectProperties(bpy.types.PropertyGroup):
 		items = [
 			('DEFAULT', "Default", "Object with no special handling."),
 			('FUSELAGE', "Fuselage", "The fuselage of the plane. Should be centered around center of gravity."),
-			('STRUT', 'Landing Gear Strut', 'Can be rotated while steering and is moved up and down according to compression. Needs at least on wheel as child.'),
-			('WHEEL', 'Wheel', 'Is rotated according to speed while taxiing around. Has to be child of a Landing Gear Strut.')
+			('STRUT', "Landing Gear Strut", "Can be rotated while steering and is moved up and down according to compression. Needs at least on wheel as child."),
+			('WHEEL', "Wheel", "Is rotated according to speed while taxiing around. Has to be child of a Landing Gear Strut."),
+			('PICKABLE', "Clickable", "A clickable button, switch etc."),
+			('TANK', "Tank", "Tank containing liquid or gas (eg. fuel, oxygen, etc.).")
 		],
 		default='DEFAULT',
 		options = {'HIDDEN'},
@@ -177,6 +220,11 @@ class ObjectProperties(bpy.types.PropertyGroup):
 		type = GearProperties,
 		name = "Gear",
 		description = "Landing gear settings (if type == STRUT)"
+	)
+	tank = bpy.props.PointerProperty(
+		type = TankProperties,
+		name = "Tank",
+		description = "Tank settings (if type == CONSUMABLE)"
 	)
 
 def register():

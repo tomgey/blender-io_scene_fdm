@@ -14,7 +14,65 @@ def box_info(layout, text):
 	box = layout.box()
 	box.label(text, 'INFO')
 
+class DialogOperator(bpy.types.Operator):
+	bl_idname = "fdm.dialog_select_prop"
+	bl_label = "Select Property"
+	
+	def getProperties(self, context):
+		return [(p, p, p) for p in bpy.data.objects['C130J-Fuselage'].keys() if p[0] == '/']
+
+	prop = bpy.props.EnumProperty(items = getProperties)
+	new_prop = bpy.props.StringProperty()
+	target = bpy.props.StringProperty()
+
+	def draw(self, context):
+		layout = self.layout
+		layout.prop(self, 'prop', "Use")
+		layout.label("or")
+		layout.prop(self, 'new_prop', "Create new")
+
+	def execute(self, context):
+		ob = context.active_object
+		prop = self.prop
+
+		if len(self.new_prop) > 0:
+			prop = self.new_prop
+			if prop[0] != '/':
+				prop = '/' + prop
+			bpy.data.objects['C130J-Fuselage'][prop] = 0
+
+		i = self.target.split(':')
+
+		driver = ob.animation_data.drivers[int(i[0])].driver
+		driver.type = 'SUM'
+		
+		var = driver.variables[int(i[1])]
+		var.type = 'SINGLE_PROP'
+
+		target = var.targets[0]
+		target.id_type = 'OBJECT'
+		target.id = bpy.data.objects['C130J-Fuselage']
+		target.data_path = '["' + prop + '"]'
+
+		return {'FINISHED'}
+	
+	def invoke(self, context, event):
+		return bpy.context.window_manager.invoke_props_dialog(self)
+
 def layoutDefault(layout, ob):
+	if not ob.animation_data:
+		return
+	
+	for i_driver, driver in enumerate(ob.animation_data.drivers):
+		for i_var, var in enumerate(driver.driver.variables):
+			# We can only pass one argument to the operator, therefore we have to
+			# combine the indices into one string
+			indices = str(i_driver) + ':' + str(i_var)
+
+			layout.label(var.targets[0].data_path)
+			layout.operator('fdm.dialog_select_prop').target = indices
+
+def layoutAnimated(layout, ob):
 	pass
 
 def layoutFuselage(layout, ob):
@@ -80,12 +138,31 @@ def layoutStrut(layout, ob):
 	if gear.steering_type == 'STEERABLE':
 		box.prop(gear, 'max_steer')
 
+def layoutTank(layout, ob):
+	tank = ob.fgfs.tank
+	
+	box = template_propbox(layout, "Tank: " + ob.name)
+	box.prop(tank, 'content')
+	
+	if tank.content == 'FUEL':
+		unit = "[m³]"
+	else:
+		unit = "[l (dm³)]"
+		
+	col = box.column(align=True)
+	col.prop(tank, 'capacity', text = "Capacity " + unit)
+	col.prop(tank, 'unusable', text = "Unusable [%]")
+	col.prop(tank, 'level', text = "Fill level [%]")
+
 # assign layouts to types
 layouts = {
 	'DEFAULT': layoutDefault,
+	'ANIMATED': layoutAnimated,
+	'PICKABLE': layoutDefault,
 	'FUSELAGE': layoutFuselage,
 	'STRUT': layoutStrut,
-	'WHEEL': layoutDefault
+	'WHEEL': layoutDefault,
+	'TANK': layoutTank,
 }
 
 class FlightgearPanel(bpy.types.Panel):
@@ -96,13 +173,16 @@ class FlightgearPanel(bpy.types.Panel):
 
 	@classmethod
 	def poll(self, context):
-		if context.object and context.object.type == 'MESH':
+		if context.object and context.object.type in ['MESH', 'EMPTY']:
 			return True
 
 	def draw(self, context):
 		layout = self.layout
 		ob = context.active_object
-		
+		fuselage = ob
+		while fuselage and fuselage.fgfs.type != 'FUSELAGE':
+			fuselage = fuselage.parent
+		layout.label(fuselage.name if fuselage else "NO FUSELAGE!")
 		layout.prop(ob.fgfs, 'type')
 		layouts[ob.fgfs.type](layout, ob)
 

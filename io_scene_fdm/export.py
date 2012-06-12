@@ -18,8 +18,20 @@ class AnimationsFGFS:
 	
 	def __init__(self):
 		self.model = util.XMLDocument('PropertyList')
+		self.obs_transparent = []
 
 	def save(self, filename):
+		
+		# Let transparent objects use the model-transparent effect to be compatible
+		# with Rembrandt rendering of FlightGear
+		if len(self.obs_transparent):
+			eff = self.model.createChild('effect')
+			eff.createPropChild('inherits-from', 'Effects/model-transparent')
+			for ob in self.obs_transparent:
+				eff.createPropChild('object-name', ob.name)
+
+		self.model.createChild('path', path.basename(filename) + '.ac')
+
 		f = open(filename + '.model.xml', 'w')
 		self.model.writexml(f, "", "\t", "\n")
 		f.close()
@@ -72,7 +84,8 @@ class AnimationsFGFS:
 		p.createPropChild('property', node + 'tyre-smoke')
 		m.createVectorChild('offsets', gear['location'], '-m')
 	
-	def addAnimation(	self,	anim_type, obs, prop,
+	def addAnimation(	self,	anim_type, obs,
+											prop = None,
 											axis = None,
 											factor = None,
 											offset = None,
@@ -91,7 +104,8 @@ class AnimationsFGFS:
 		for ob in obs:
 			a.createPropChild('object-name', ob.name)
 
-		a.createPropChild('property', prop)
+		if prop != None:
+			a.createPropChild('property', prop)
 
 		if factor != None:
 			a.createPropChild('factor', factor)
@@ -111,13 +125,16 @@ class AnimationsFGFS:
 				e.createPropChild('ind', entry[0])
 				e.createPropChild('dep', entry[1])
 		
-		if anim_type != 'translate':
+		if anim_type in ['rotate', 'spin']:
 			a.createCenterChild(obs[0])
 		
 		if axis != None:
 			a.createVectorChild('axis', axis)
 		
 		return a
+	
+	def addTransparentObject(self, ob):
+		self.obs_transparent.append(ob)
 
 class Exporter(bpy.types.Operator, ExportHelper):
 	'''Export to Flightgear FDM (.xml)'''
@@ -138,13 +155,17 @@ class Exporter(bpy.types.Operator, ExportHelper):
 			if not ob.is_visible(context.scene):
 				continue
 			
+			self.checkTransparency(ob)
+			
 			if ob.fgfs.type == 'STRUT':
 				self.exportGear(ob)
-			
+			elif ob.fgfs.type == 'PICKABLE':
+				self.exportPickable(ob)
+
 			self.exportDrivers(ob)
 		
 		f = open(self.filepath, 'w')
-		self.ground_reactions.writexml(f, " ", " ", "\n")
+		self.ground_reactions.writexml(f, "", "\t", "\n")
 		f.close()
 		
 		file_name = path.splitext(self.filepath)
@@ -253,6 +274,9 @@ class Exporter(bpy.types.Operator, ExportHelper):
 				print('Exporting ' + driver.data_path + ' not supported yet!')
 				continue
 			
+			# TODO check for real gear index
+			prop = prop.replace('/gear/', 'gear/gear[0]/')
+			
 			if table:
 				self.exp_anim.addAnimation(
 					anim_type,
@@ -270,3 +294,21 @@ class Exporter(bpy.types.Operator, ExportHelper):
 					factor = factor,
 					offset = offset
 				)
+				
+	def exportPickable(self, ob):
+		action = self.exp_anim.addAnimation('pick', ob).createChild('action')
+		action.createChild('button', 0)
+		binding = action.createChild('binding')
+		binding.createChild('command','property-assign')
+		binding.createChild('property','/controls/instruments/'+ob.parent.name+'/input')
+		binding.createChild('value', ob.name)
+		
+	def checkTransparency(self, ob):
+		is_transparent = False
+		for slot in ob.material_slots:
+			if slot.material and slot.material.use_transparency:
+				is_transparent = True
+				break
+			
+		if is_transparent:
+			self.exp_anim.addTransparentObject(ob)
