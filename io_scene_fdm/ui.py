@@ -1,9 +1,13 @@
 import bpy
+from rna_prop_ui import rna_idprop_ui_prop_get
 
-def template_propbox(layout, label):
+# property object for DialogOperator
+ob_prop = None
+
+def template_propbox(layout, label, icon = None):
 	col = layout.column(align=True)
 	box = col.box()
-	box.label(label)
+	box.label(label, icon)
 	return col.box()
 
 def box_error(layout, text):
@@ -34,12 +38,20 @@ class DialogOperator(bpy.types.Operator):
 	def execute(self, context):
 		ob = context.active_object
 		prop = self.prop
+		global ob_prop
 
 		if len(self.new_prop) > 0:
 			prop = self.new_prop
 			if prop[0] != '/':
 				prop = '/' + prop
-			bpy.data.objects['C130J-Fuselage'][prop] = 0
+
+			# Create property
+			ob_prop[prop] = 0.0
+
+			# Limit to [0, 1]
+			prop_ui = rna_idprop_ui_prop_get(ob_prop, prop, create=True)
+			prop_ui['soft_min'] = 0.0
+			prop_ui['soft_max'] = 1.0
 
 		i = self.target.split(':')
 
@@ -51,7 +63,7 @@ class DialogOperator(bpy.types.Operator):
 
 		target = var.targets[0]
 		target.id_type = 'OBJECT'
-		target.id = bpy.data.objects['C130J-Fuselage']
+		target.id = ob_prop
 		target.data_path = '["' + prop + '"]'
 
 		return {'FINISHED'}
@@ -60,20 +72,58 @@ class DialogOperator(bpy.types.Operator):
 		return bpy.context.window_manager.invoke_props_dialog(self)
 
 def layoutDefault(layout, ob):
+	pass
+
+def layoutAnimations(layout, ob):
 	if not ob.animation_data:
 		return
 	
+	box = template_propbox(layout, "Animations", 'ANIM')
+
+	global ob_prop
+	if not ob_prop:
+		box.label("No (parent) object of type Fuselage!", 'ERROR')
+		return
+		
+	axis_names = ['X', 'Y', 'Z']
+	
 	for i_driver, driver in enumerate(ob.animation_data.drivers):
+		text = "Animation: "
+		if driver.data_path == 'rotation_euler':
+			icon = 'MAN_ROT'
+			text += "Rotate "
+		elif driver.data_path == 'location':
+			icon = 'MAN_TRANS'
+			text += "Translate "
+		elif driver.data_path == 'scale':
+			icon = 'MAN_SCALE'
+			text += "Scale "
+		else:
+			print('Driver type ' + driver.data_path + ' not supported yet!')
+			continue
+		text += axis_names[ driver.array_index ]
+		box.label(text, icon)
+
 		for i_var, var in enumerate(driver.driver.variables):
+			row = box.row(align=True)
+			#row.alignment = 'LEFT'
+
+			text_select = "Select property"
+			if var.type == 'SINGLE_PROP':
+				target = var.targets[0]
+				if target.id_type == 'OBJECT' and target.id and len(target.data_path):
+					row.prop(target.id, target.data_path)
+					text_select = ""
+
 			# We can only pass one argument to the operator, therefore we have to
 			# combine the indices into one string
 			indices = str(i_driver) + ':' + str(i_var)
 
-			layout.label(var.targets[0].data_path)
-			layout.operator('fdm.dialog_select_prop').target = indices
-
-def layoutAnimated(layout, ob):
-	pass
+			row.operator(
+				'fdm.dialog_select_prop',
+				icon = 'FILE_FOLDER',
+				text = text_select
+			).target = indices
 
 def layoutFuselage(layout, ob):
 	props = ob.fgfs.fuselage
@@ -157,7 +207,6 @@ def layoutTank(layout, ob):
 # assign layouts to types
 layouts = {
 	'DEFAULT': layoutDefault,
-	'ANIMATED': layoutAnimated,
 	'PICKABLE': layoutDefault,
 	'FUSELAGE': layoutFuselage,
 	'STRUT': layoutStrut,
@@ -179,12 +228,16 @@ class FlightgearPanel(bpy.types.Panel):
 	def draw(self, context):
 		layout = self.layout
 		ob = context.active_object
-		fuselage = ob
-		while fuselage and fuselage.fgfs.type != 'FUSELAGE':
-			fuselage = fuselage.parent
-		layout.label(fuselage.name if fuselage else "NO FUSELAGE!")
+
+		# Get object containing all properties for animations
+		global ob_prop
+		ob_prop = ob
+		while ob_prop and ob_prop.fgfs.type != 'FUSELAGE':
+			ob_prop = ob_prop.parent
+
 		layout.prop(ob.fgfs, 'type')
 		layouts[ob.fgfs.type](layout, ob)
+		layoutAnimations(layout, ob)
 
 #	def _drawPlaneRoot(self, layout, ob):
 #	layout.label('Aircraft')
