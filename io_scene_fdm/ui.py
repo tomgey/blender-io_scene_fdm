@@ -176,6 +176,7 @@ def layoutAnimations(layout, ob):
 			box_error(box, "Warning: more than one variable!")
 		
 		num_keys = len(driver.keyframe_points)
+		
 		start_point = driver.keyframe_points[0] if num_keys > 0 else None
 		end_point = driver.keyframe_points[1] if num_keys > 1 else None
 		
@@ -214,7 +215,7 @@ def layoutAnimations(layout, ob):
 					'fdm.dialog_select_prop',
 					icon = 'FILE_FOLDER',
 					text = "Select property" if not len(target.data_path) else ""
-				)
+				).driver_id = driver_id
 
 def layoutFuselage(layout, ob):
 	props = ob.fgfs.fuselage
@@ -329,14 +330,3 @@ class FlightgearPanel(bpy.types.Panel):
 		layout.prop(ob.fgfs, 'type')
 		layouts[ob.fgfs.type](layout, ob)
 		layoutAnimations(layout, ob)
-
-#	def _drawPlaneRoot(self, layout, ob):
-#	layout.label('Aircraft')
-#	
-#	gears = util.getAllChildren(ob, 'Gear')
-#	
-#	if len(gears) < 3:
-#	layout.label('Warning: Only %d gears found (Min. 3 needed)!' % len(gears))
-#	
-#	for child in gears:
-#	layout.label(child.name)

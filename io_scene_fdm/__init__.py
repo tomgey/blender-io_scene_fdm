@@ -5,7 +5,7 @@ bl_info = {
   "blender": (2, 60, 7),
   "api": 42503,
 #  "location": "File > Import-Export",
-  "description": "Create and export Flightgear FDM and plane",
+  "description": "Create and export FlightGear FDM and plane",
   "warning": "Pre Alpha",
   "wiki_url": "",
   "tracker_url": "",
