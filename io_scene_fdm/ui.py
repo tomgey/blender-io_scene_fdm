@@ -17,17 +17,78 @@ def box_error(layout, text):
 def box_info(layout, text):
 	box = layout.box()
 	box.label(text, 'INFO')
+	
+class EnableAnimationOperator(bpy.types.Operator):
+	bl_idname = "fdm.enable_animation"
+	bl_label = "Enable animation"
+
+	driver_id = bpy.props.IntProperty()
+
+	def execute(self, context):
+		ob = context.active_object
+
+		driver = ob.animation_data.drivers[self.driver_id]
+		modifiers = driver.modifiers
+		while len(modifiers):
+			modifiers.remove(modifiers[0])
+		
+		driver = driver.driver
+		driver.type = 'SUM'
+		
+		var = driver.variables[0]
+		var.type = 'SINGLE_PROP'
+
+		target = var.targets[0]
+		target.id_type = 'OBJECT'
+		target.id = None
+
+		return {'FINISHED'}
+
+class SelectKeyframeOperator(bpy.types.Operator):
+	bl_idname = "fdm.select_keyframe"
+	bl_label = "Select keyframe"
+
+	driver_id = bpy.props.IntProperty()
+	key_id = bpy.props.IntProperty()
+
+	def execute(self, context):
+		ob = context.active_object
+
+		driver = ob.animation_data.drivers[self.driver_id]
+		num_points = len(driver.keyframe_points)
+		if self.key_id >= num_points:
+			driver.keyframe_points.add(self.key_id - num_points + 1)
+			
+			for i in range(num_points, self.key_id):
+				driver.keyframe_points[i].co = [-1, 0]
+
+		driver.keyframe_points[self.key_id].co = [
+			self.key_id,
+			ob.path_resolve(driver.data_path)[ driver.array_index ]
+		]
+		driver.keyframe_points[self.key_id].interpolation = 'LINEAR'
+		
+		if		( len(driver.keyframe_points) == 2
+			 and driver.keyframe_points[0].co[0] == 0
+			 and driver.keyframe_points[1].co[0] == 1 ):
+			var = driver.driver.variables[0]
+
+			global ob_prop
+			var.targets[0].id = ob_prop
+
+		return {'FINISHED'}
 
 class DialogOperator(bpy.types.Operator):
 	bl_idname = "fdm.dialog_select_prop"
 	bl_label = "Select Property"
 	
 	def getProperties(self, context):
-		return [(p, p, p) for p in bpy.data.objects['C130J-Fuselage'].keys() if p[0] == '/']
+		return [(p, p, p) for p in ob_prop.keys() if p[0] == '/']
 
 	prop = bpy.props.EnumProperty(items = getProperties)
 	new_prop = bpy.props.StringProperty()
-	target = bpy.props.StringProperty()
+
+	driver_id = bpy.props.IntProperty()
 
 	def draw(self, context):
 		layout = self.layout
@@ -53,12 +114,10 @@ class DialogOperator(bpy.types.Operator):
 			prop_ui['soft_min'] = 0.0
 			prop_ui['soft_max'] = 1.0
 
-		i = self.target.split(':')
-
-		driver = ob.animation_data.drivers[int(i[0])].driver
+		driver = ob.animation_data.drivers[self.driver_id].driver
 		driver.type = 'SUM'
 		
-		var = driver.variables[int(i[1])]
+		var = driver.variables[0]
 		var.type = 'SINGLE_PROP'
 
 		target = var.targets[0]
@@ -87,7 +146,7 @@ def layoutAnimations(layout, ob):
 		
 	axis_names = ['X', 'Y', 'Z']
 	
-	for i_driver, driver in enumerate(ob.animation_data.drivers):
+	for driver_id, driver in enumerate(ob.animation_data.drivers):
 		text = "Animation: "
 		if driver.data_path == 'rotation_euler':
 			icon = 'MAN_ROT'
@@ -103,27 +162,59 @@ def layoutAnimations(layout, ob):
 			continue
 		text += axis_names[ driver.array_index ]
 		box.label(text, icon)
+		
+		if driver.driver.type != 'SUM':
+			box.operator(
+				'fdm.enable_animation',
+				icon = 'ANIM',
+				text = "Enable animation"
+			).driver_id = driver_id
+			continue
+		
+		variables = driver.driver.variables
+		if len(variables) > 1:
+			box_error(box, "Warning: more than one variable!")
+		
+		num_keys = len(driver.keyframe_points)
+		start_point = driver.keyframe_points[0] if num_keys > 0 else None
+		end_point = driver.keyframe_points[1] if num_keys > 1 else None
+		
+		start_valid = start_point and start_point.co[0] == 0
+		end_valid = end_point and end_point.co[0] == 1
+		
+		row = box.row(align=True)
+		row.label("Endpoints")
 
-		for i_var, var in enumerate(driver.driver.variables):
-			row = box.row(align=True)
-			#row.alignment = 'LEFT'
+		ob_props = row.operator(
+			'fdm.select_keyframe',
+			icon = 'FILE_TICK' if start_valid else 'KEY_HLT',
+			text = "Start"
+		)
+		ob_props.driver_id = driver_id
+		ob_props.key_id = 0
 
-			text_select = "Select property"
-			if var.type == 'SINGLE_PROP':
-				target = var.targets[0]
-				if target.id_type == 'OBJECT' and target.id and len(target.data_path):
+		ob_props = row.operator(
+			'fdm.select_keyframe',
+			icon = 'FILE_TICK' if end_valid else 'KEY_HLT',
+			text = "End"
+		)
+		ob_props.driver_id = driver_id
+		ob_props.key_id = 1
+
+		var = variables[0]
+		if var.type == 'SINGLE_PROP':
+			target = var.targets[0]
+			if target.id_type == 'OBJECT' and target.id:
+				row = box.row(align=True)
+
+				if len(target.data_path):
 					row.prop(target.id, target.data_path)
-					text_select = ""
-
-			# We can only pass one argument to the operator, therefore we have to
-			# combine the indices into one string
-			indices = str(i_driver) + ':' + str(i_var)
-
-			row.operator(
-				'fdm.dialog_select_prop',
-				icon = 'FILE_FOLDER',
-				text = text_select
-			).target = indices
+					
+				row.operator(
+					'fdm.dialog_select_prop',
+					icon = 'FILE_FOLDER',
+					text = "Select property" if not len(target.data_path) else ""
+				)
 
 def layoutFuselage(layout, ob):
 	props = ob.fgfs.fuselage

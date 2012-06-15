@@ -1,4 +1,5 @@
 import bpy, math
+from rna_prop_ui import rna_idprop_ui_prop_get
 
 class FuselageProperties(bpy.types.PropertyGroup):
 	empty_weight = bpy.props.FloatProperty(
@@ -181,11 +182,10 @@ def _onTypeChange(self, context):
 	for cat, props in properties.items():
 		if cat == self.type:
 			for prop, dom in props.items():
-				ob[prop] = 0
-				ob['_RNA_UI'][prop] = {
-					'min': dom[0],
-					'max': dom[1]
-				}
+				ob[prop] = 0.0
+				prop_ui = rna_idprop_ui_prop_get(ob, prop, create=True)
+				prop_ui['min'] = float(dom[0])
+				prop_ui['max'] = float(dom[1])
 		else:
 			# remove values from other categories
 			for prop in props.keys():
