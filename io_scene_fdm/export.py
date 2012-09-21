@@ -161,6 +161,8 @@ class Exporter(bpy.types.Operator, ExportHelper):
 				self.exportGear(ob)
 			elif ob.fgfs.type == 'PICKABLE':
 				self.exportPickable(ob)
+			elif ob.type == 'LAMP':
+				self.exportLight(ob)
 
 			self.exportDrivers(ob)
 		
@@ -296,12 +298,30 @@ class Exporter(bpy.types.Operator, ExportHelper):
 				)
 				
 	def exportPickable(self, ob):
+		props = ob.fgfs.clickable
+
 		action = self.exp_anim.addAnimation('pick', ob).createChild('action')
 		action.createChild('button', 0)
 		binding = action.createChild('binding')
-		binding.createChild('command','property-assign')
-		binding.createChild('property','/controls/instruments/'+ob.parent.name+'/input')
-		binding.createChild('value', ob.name)
+		binding.createChild('command', props.action)
+		prop = props.prop
+		if len(prop) == 0:
+			prop = '/controls/instruments/'+ob.parent.name+'/input'
+		binding.createChild('property', prop)
+		if props.action in ['property-assign']:
+			binding.createChild('value', ob.name)
+	
+	def exportLight(self, ob):
+		if ob.data.type != 'SPOT':
+			return
+		
+		m = self.exp_anim.model.createChild('model')
+		m.createPropChild('path', "Aircraft/Generic/Lights/light-cone.xml")
+		m.createPropChild('name', ob.name)
+		o = m.createVectorChild('offsets', ob.matrix_world.to_translation(),'-m')
+		o.createPropChild('pitch-deg', -5)
+		p = m.createChild('overlay').createChild('params')
+		p.createPropChild('switch', "/controls/lighting/landing-lights")
 		
 	def checkTransparency(self, ob):
 		is_transparent = False

@@ -1,6 +1,23 @@
 import bpy, math
 from rna_prop_ui import rna_idprop_ui_prop_get
 
+class ClickableProperties(bpy.types.PropertyGroup):
+	action = bpy.props.EnumProperty(
+		name = "Action",
+		description = "Action triggered on click",
+		items = [
+			('property-toggle', "Toggle", "property-toggle"),
+			('property-assign', "Assign", "property-assign")
+		],
+		default = 'property-toggle',
+		options = {'HIDDEN'}
+	)
+	prop = bpy.props.StringProperty(
+		name = "Property",
+		description = "Property modified by action",
+		options = {'HIDDEN'}
+	)
+
 class FuselageProperties(bpy.types.PropertyGroup):
 	empty_weight = bpy.props.FloatProperty(
 		name = "Empty weight",
@@ -211,6 +228,11 @@ class ObjectProperties(bpy.types.PropertyGroup):
 		update = _onTypeChange
 	)
 	
+	clickable = bpy.props.PointerProperty(
+		type = ClickableProperties,
+		name = "Clickable",
+		description = "Clickable Settings (if type == PICKABLE)"
+	)
 	fuselage = bpy.props.PointerProperty(
 		type = FuselageProperties,
 		name = "Fuselage",

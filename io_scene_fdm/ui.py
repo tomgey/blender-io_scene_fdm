@@ -4,7 +4,7 @@ from rna_prop_ui import rna_idprop_ui_prop_get
 # property object for DialogOperator
 ob_prop = None
 
-def template_propbox(layout, label, icon = None):
+def template_propbox(layout, label, icon = 'NONE'):
 	col = layout.column(align=True)
 	box = col.box()
 	box.label(label, icon)
@@ -217,6 +217,12 @@ def layoutAnimations(layout, ob):
 					text = "Select property" if not len(target.data_path) else ""
 				).driver_id = driver_id
 
+def layoutClickable(layout, ob):
+	props = ob.fgfs.clickable
+	
+	layout.prop(props, 'action')
+	layout.prop(props, 'prop')
+
 def layoutFuselage(layout, ob):
 	props = ob.fgfs.fuselage
 	
@@ -280,6 +286,9 @@ def layoutStrut(layout, ob):
 	if gear.steering_type == 'STEERABLE':
 		box.prop(gear, 'max_steer')
 
+def layoutLight(layout, ob):
+	pass
+
 def layoutTank(layout, ob):
 	tank = ob.fgfs.tank
 	
@@ -299,7 +308,7 @@ def layoutTank(layout, ob):
 # assign layouts to types
 layouts = {
 	'DEFAULT': layoutDefault,
-	'PICKABLE': layoutDefault,
+	'PICKABLE': layoutClickable,
 	'FUSELAGE': layoutFuselage,
 	'STRUT': layoutStrut,
 	'WHEEL': layoutDefault,
@@ -314,7 +323,7 @@ class FlightgearPanel(bpy.types.Panel):
 
 	@classmethod
 	def poll(self, context):
-		if context.object and context.object.type in ['MESH', 'EMPTY']:
+		if context.object and context.object.type in ['MESH', 'EMPTY', 'LAMP']:
 			return True
 
 	def draw(self, context):
@@ -327,6 +336,9 @@ class FlightgearPanel(bpy.types.Panel):
 		while ob_prop and ob_prop.fgfs.type != 'FUSELAGE':
 			ob_prop = ob_prop.parent
 
-		layout.prop(ob.fgfs, 'type')
-		layouts[ob.fgfs.type](layout, ob)
-		layoutAnimations(layout, ob)
+		if ob.type == 'LAMP':
+			pass
+		else:
+			layout.prop(ob.fgfs, 'type')
+			layouts[ob.fgfs.type](layout, ob)
+			layoutAnimations(layout, ob)
