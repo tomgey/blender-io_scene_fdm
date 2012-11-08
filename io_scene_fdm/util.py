@@ -87,17 +87,13 @@ class XMLElement(dom.Element):
 				
 				return v
 			
-		def createCenterChild(self, ob):
+		def createCenterChild(self, center):
 			'''
 			Create a node with the center of the given object
 			
-			@param ob	Object
+			@param center	Vector3
 			'''
-			return self.createVectorChild(
-				'center',
-				ob.matrix_world.translation,
-				unit_suffix = '-m'
-			)
+			return self.createVectorChild('center', center, unit_suffix = '-m')
 		
 		def writexml(self, writer, indent="", addindent="", newl=""):
 				if (		 len(self.childNodes) == 1

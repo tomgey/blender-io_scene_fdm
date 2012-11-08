@@ -3,8 +3,8 @@ Write aircraft data to file(s)
 
 @author: tom
 '''
-import math, mathutils
-from mathutils import Vector
+import math
+from mathutils import Matrix, Vector
 from os import path
 
 ft2m = 0.3048
@@ -86,6 +86,7 @@ class AnimationsFGFS:
 	
 	def addAnimation(	self,	anim_type, obs,
 											prop = None,
+											center = None,
 											axis = None,
 											factor = None,
 											offset = None,
@@ -126,7 +127,8 @@ class AnimationsFGFS:
 				e.createPropChild('dep', entry[1])
 		
 		if anim_type in ['rotate', 'spin']:
-			a.createCenterChild(obs[0])
+			a.createCenterChild(center if center != None \
+												       else obs[0].matrix_world.to_translation())
 		
 		if axis != None:
 			a.createVectorChild('axis', axis)
@@ -144,27 +146,60 @@ class Exporter(bpy.types.Operator, ExportHelper):
 	
 	filename_ext = '.xml'
 	
+	def parseLevel( self,
+									objects,
+									ignore_select = False,
+									parent_tf = Matrix() ):
+		'''
+		Parse a level in the object hierarchy
+		'''
+		for ob in objects:
+			
+			matrix_world = parent_tf
+			if ob.parent != None:
+				matrix_world *= ob.matrix_parent_inverse
+			matrix_world *= ob.matrix_basis
+
+			# Objects from libraries don't have the select flag set even if their
+			# proxy is selected. We therefore consider all objects from libraries as
+			# selected, as the only possibility to get them considered is if their
+			# proxy should be exported.
+			if ob.is_visible(self.context.scene) and (ob.select or ignore_select):
+				
+				self.exportObject(ob, matrix_world)
+
+				# We need to check for dupligroups first as every type of object can be
+				# converted to a dupligroup without removing the data from the old type.
+				if ob.dupli_type == 'GROUP':
+					children = [child for child in ob.dupli_group.objects
+					                            if not child.parent
+					                            or not child.parent.name in ob.dupli_group.objects]
+					self.parseLevel(children, True, matrix_world)
+
+			if len(ob.children):
+				self.parseLevel(ob.children, ignore_select, matrix_world)
+	
+	def exportObject(self, ob, tf):
+		self.checkTransparency(ob)
+		
+		if ob.fgfs.type == 'STRUT':
+			self.exportGear(ob, tf)
+		elif ob.fgfs.type == 'PICKABLE':
+			self.exportPickable(ob)
+		elif ob.type == 'LAMP':
+			self.exportLight(ob, tf)
+
+		self.exportDrivers(ob, tf)
+	
 	def execute(self, context):
 		t = time.mktime(datetime.datetime.now().timetuple())
 		
 		self.gear_index = 0
 		self.exp_anim = AnimationsFGFS()
 		self.ground_reactions = util.XMLDocument('ground_reactions')
+		self.context = context
 		
-		for ob in bpy.data.objects:
-			if not ob.is_visible(context.scene):
-				continue
-			
-			self.checkTransparency(ob)
-			
-			if ob.fgfs.type == 'STRUT':
-				self.exportGear(ob)
-			elif ob.fgfs.type == 'PICKABLE':
-				self.exportPickable(ob)
-			elif ob.type == 'LAMP':
-				self.exportLight(ob)
-
-			self.exportDrivers(ob)
+		self.parseLevel([ob for ob in bpy.data.objects if ob.parent == None and not ob.library])
 		
 		f = open(self.filepath, 'w')
 		self.ground_reactions.writexml(f, "", "\t", "\n")
@@ -178,7 +213,7 @@ class Exporter(bpy.types.Operator, ExportHelper):
 	
 		return {'FINISHED'}
 	
-	def exportGear(self, ob):
+	def exportGear(self, ob, tf):
 		gear = aircraft.gear.parse(ob)
 		c = self.ground_reactions.createChild('contact')
 		c.setAttribute('type', 'BOGEY')
@@ -209,13 +244,13 @@ class Exporter(bpy.types.Operator, ExportHelper):
 		self.exp_anim.addGear(gear, self.gear_index)
 		self.gear_index += 1
 	
-	def exportDrivers(self, ob):
+	def exportDrivers(self, ob, matrix_world):
 		
 		if not ob.animation_data:
 			return
 
 		# object center in world coordinates
-		center = ob.matrix_world.to_translation()
+		center = matrix_world.to_translation()
 		
 		for driver in ob.animation_data.drivers:
 			# get the animation axis in world coordinate frame
@@ -223,7 +258,7 @@ class Exporter(bpy.types.Operator, ExportHelper):
 			p2 = Vector([0,0,0])
 			p2[ driver.array_index ] = 1
 			
-			axis = (ob.matrix_world * p2) - center
+			axis = matrix_world * p2 - center
 			prop = None
 			factor = 1
 			offset = 0
@@ -283,6 +318,7 @@ class Exporter(bpy.types.Operator, ExportHelper):
 				self.exp_anim.addAnimation(
 					anim_type,
 					ob,
+					center = center,
 					axis = axis,
 					prop = prop,
 					table = table
@@ -292,6 +328,7 @@ class Exporter(bpy.types.Operator, ExportHelper):
 					anim_type,
 					ob,
 					prop = prop,
+					center = center,
 					axis = axis,
 					factor = factor,
 					offset = offset
@@ -311,9 +348,11 @@ class Exporter(bpy.types.Operator, ExportHelper):
 		if props.action in ['property-assign']:
 			binding.createChild('value', ob.name)
 	
-	def exportLight(self, ob):
+	def exportLight(self, ob, tf):
 		if ob.data.type != 'SPOT':
 			return
+		
+		return
 		
 		m = self.exp_anim.model.createChild('model')
 		m.createPropChild('path', "Aircraft/Generic/Lights/light-cone.xml")
