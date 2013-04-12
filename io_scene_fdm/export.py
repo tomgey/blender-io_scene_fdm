@@ -279,7 +279,8 @@ class Exporter(bpy.types.Operator, ExportHelper):
 				raise RuntimeError('No property!')
 			
 			if len(driver.keyframe_points):
-				table = [k.co for k in driver.keyframe_points]
+				cur_val = getattr(ob, driver.data_path)[driver.array_index]
+				table = [[k.co[0], k.co[1] - cur_val] for k in driver.keyframe_points]
 			else:
 				for mod in driver.modifiers:
 					if mod.type != 'GENERATOR':
@@ -299,8 +300,7 @@ class Exporter(bpy.types.Operator, ExportHelper):
 				
 			if driver.data_path == 'rotation_euler':
 				if table:
-					of = ob.rotation_euler[ driver.array_index ]
-					table = [[k[0], round(math.degrees(k[1] - of), 1)] for k in table]
+					table = [[k[0], round(math.degrees(k[1]), 1)] for k in table]
 				else:
 					factor = math.degrees(factor)
 					offset = math.degrees(offset)
