@@ -130,10 +130,10 @@ class DialogOperator(bpy.types.Operator):
 	def invoke(self, context, event):
 		return bpy.context.window_manager.invoke_props_dialog(self)
 
-def layoutDefault(layout, ob):
+def layoutDefault(layout, ob, ctx):
 	pass
 
-def layoutAnimations(layout, ob):
+def layoutAnimations(layout, ob, ctx):
 	if not ob.animation_data:
 		return
 	
@@ -217,13 +217,13 @@ def layoutAnimations(layout, ob):
 					text = "Select property" if not len(target.data_path) else ""
 				).driver_id = driver_id
 
-def layoutClickable(layout, ob):
+def layoutClickable(layout, ob, ctx):
 	props = ob.fgfs.clickable
 	
 	layout.prop(props, 'action')
 	layout.prop(props, 'prop')
 
-def layoutFuselage(layout, ob):
+def layoutFuselage(layout, ob, ctx):
 	props = ob.fgfs.fuselage
 	
 	layout.label("Weights [kg]")
@@ -235,7 +235,7 @@ def layoutFuselage(layout, ob):
 	col.prop(props, 'iyy')
 	col.prop(props, 'izz')
 
-def layoutStrut(layout, ob):
+def layoutStrut(layout, ob, ctx):
 	strut = ob.data.fgfs.strut
 	gear = ob.fgfs.gear
 	
@@ -285,11 +285,12 @@ def layoutStrut(layout, ob):
 	box.prop(gear, 'steering_type')
 	if gear.steering_type == 'STEERABLE':
 		box.prop(gear, 'max_steer')
+		box.prop_search(gear, 'rotate_parent', ctx.scene, "objects")
 
-def layoutLight(layout, ob):
+def layoutLight(layout, ob, ctx):
 	pass
 
-def layoutTank(layout, ob):
+def layoutTank(layout, ob, ctx):
 	tank = ob.fgfs.tank
 	
 	box = template_propbox(layout, "Tank: " + ob.name)
@@ -340,5 +341,5 @@ class FlightgearPanel(bpy.types.Panel):
 			pass
 		else:
 			layout.prop(ob.fgfs, 'type')
-			layouts[ob.fgfs.type](layout, ob)
-			layoutAnimations(layout, ob)
+			layouts[ob.fgfs.type](layout, ob, context)
+			layoutAnimations(layout, ob, context)

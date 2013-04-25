@@ -105,8 +105,8 @@ class GearProperties(bpy.types.PropertyGroup):
 		options = {'HIDDEN'}
 	)
 	steering_type = bpy.props.EnumProperty(
-	  name = "Steering",
-	  description = "Set steerability of gear",
+		name = "Steering",
+		description = "Set steerability of gear",
 		items = [
 			('STEERABLE', 'Steerable', 'Steerable'),
 			('FIXED', 'Fixed', 'Fixed (Steering disabled)'),
@@ -125,6 +125,11 @@ class GearProperties(bpy.types.PropertyGroup):
 		max = math.radians(360),
 		soft_min = math.radians(-80),
 		soft_max = math.radians(80),
+		options = {'HIDDEN'}
+	)
+	rotate_parent = bpy.props.StringProperty(
+		name = "Rotate parent",
+		description = "(Parent) object rotated while steering instead of this object",
 		options = {'HIDDEN'}
 	)
 

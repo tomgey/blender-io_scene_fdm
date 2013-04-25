@@ -15,13 +15,13 @@ from . import aircraft, util
 
 class AnimationsFGFS:
 	'''Exporter for flightgear animations'''
-	
+
 	def __init__(self):
 		self.model = util.XMLDocument('PropertyList')
 		self.obs_transparent = []
 
 	def save(self, filename):
-		
+
 		# Let transparent objects use the model-transparent effect to be compatible
 		# with Rembrandt rendering of FlightGear
 		if len(self.obs_transparent):
@@ -42,7 +42,7 @@ class AnimationsFGFS:
 		@param i				Gear index
 		'''
 		node = 'gear/gear['+str(i)+']/'
-		
+
 		# Compression
 		self.addAnimation(
 			'translate',
@@ -52,12 +52,16 @@ class AnimationsFGFS:
 			factor = ft2m, # TODO check yasim
 			offset = -gear['current-compression']
 		)
-		
+
 		# Steering
 		if gear['gear'].steering_type == 'STEERABLE':
+			try:
+				rotate_obj = bpy.data.objects[ gear['gear'].rotate_parent ]
+			except KeyError:
+				rotate_obj = gear['obj']
 			self.addAnimation(
 				'rotate',
-				gear['ob'],
+				rotate_obj,
 				node + 'steering-norm',
 				axis = [0,0,-1],
 				factor = math.degrees(gear['gear'].max_steer)
@@ -65,7 +69,7 @@ class AnimationsFGFS:
 		else:
 			# TODO check CASTERED
 			pass
-		
+
 		# Wheel spin
 		dist = gear['wheels'][0]['diameter'] * math.pi
 		self.addAnimation(
@@ -76,14 +80,14 @@ class AnimationsFGFS:
 			factor = 60 / dist, # dist per revolution to rpm
 			offset = -gear['current-compression']
 		)
-		
+
 		# Tyre smoke
 		m = self.model.createChild('model')
 		m.createPropChild('path', "Aircraft/Generic/Effects/tyre-smoke.xml")
 		p = m.createChild('overlay').createChild('params')
 		p.createPropChild('property', node + 'tyre-smoke')
 		m.createVectorChild('offsets', gear['location'], '-m')
-	
+
 	def addAnimation(	self,	anim_type, obs,
 											prop = None,
 											center = None,
@@ -118,23 +122,23 @@ class AnimationsFGFS:
 			elif anim_type == 'rotate':
 				tag += '-deg'
 			a.createPropChild(tag, offset)
-			
+
 		if table != None:
 			tab = a.createChild('interpolation')
 			for entry in table:
 				e = tab.createChild('entry')
 				e.createPropChild('ind', entry[0])
 				e.createPropChild('dep', entry[1])
-		
+
 		if anim_type in ['rotate', 'spin']:
 			a.createCenterChild(center if center != None \
 												       else obs[0].matrix_world.to_translation())
-		
+
 		if axis != None:
 			a.createVectorChild('axis', axis)
-		
+
 		return a
-	
+
 	def addTransparentObject(self, ob):
 		self.obs_transparent.append(ob)
 
@@ -143,9 +147,9 @@ class Exporter(bpy.types.Operator, ExportHelper):
 	bl_idname = 'export_scene.fdm'
 	bl_label = 'Export Flightgear FDM'
 	bl_options = {'PRESET'}
-	
+
 	filename_ext = '.xml'
-	
+
 	def parseLevel( self,
 									objects,
 									ignore_select = False,
@@ -154,7 +158,7 @@ class Exporter(bpy.types.Operator, ExportHelper):
 		Parse a level in the object hierarchy
 		'''
 		for ob in objects:
-			
+
 			matrix_world = parent_tf
 			if ob.parent != None:
 				matrix_world *= ob.matrix_parent_inverse
@@ -165,7 +169,7 @@ class Exporter(bpy.types.Operator, ExportHelper):
 			# selected, as the only possibility to get them considered is if their
 			# proxy should be exported.
 			if ob.is_visible(self.context.scene) and (ob.select or ignore_select):
-				
+
 				self.exportObject(ob, matrix_world)
 
 				# We need to check for dupligroups first as every type of object can be
@@ -178,10 +182,10 @@ class Exporter(bpy.types.Operator, ExportHelper):
 
 			if len(ob.children):
 				self.parseLevel(ob.children, ignore_select, matrix_world)
-	
+
 	def exportObject(self, ob, tf):
 		self.checkTransparency(ob)
-		
+
 		if ob.fgfs.type == 'STRUT':
 			self.exportGear(ob, tf)
 		elif ob.fgfs.type == 'PICKABLE':
@@ -190,46 +194,55 @@ class Exporter(bpy.types.Operator, ExportHelper):
 			self.exportLight(ob, tf)
 
 		self.exportDrivers(ob, tf)
-	
+
+		if ob.constraints:
+			self.constraint_objs.append(ob)
+
+		# store world matrix (eg. needed for tracking constraints)
+		self.world_matrices[ob.name] = tf
+
 	def execute(self, context):
 		t = time.mktime(datetime.datetime.now().timetuple())
-		
+
 		self.gear_index = 0
 		self.exp_anim = AnimationsFGFS()
 		self.ground_reactions = util.XMLDocument('ground_reactions')
 		self.context = context
-		
+		self.constraint_objs = []
+		self.world_matrices = {}
+
 		self.parseLevel([ob for ob in bpy.data.objects if ob.parent == None and not ob.library])
-		
+		self.exportConstraints()
+
 		f = open(self.filepath, 'w')
 		self.ground_reactions.writexml(f, "", "\t", "\n")
 		f.close()
-		
+
 		file_name = path.splitext(self.filepath)
 		self.exp_anim.save(file_name[0])
-	
+
 		t = time.mktime(datetime.datetime.now().timetuple()) - t
 		print('Finished exporting in', t, 'seconds')
-	
+
 		return {'FINISHED'}
-	
+
 	def exportGear(self, ob, tf):
 		gear = aircraft.gear.parse(ob)
 		c = self.ground_reactions.createChild('contact')
 		c.setAttribute('type', 'BOGEY')
 		c.setAttribute('name', ob.name)
-		
+
 		l = c.createVectorChild('location', gear['location'])
 		l.setAttribute('unit', 'M')
-		
+
 		c.createPropChild('static_friction', 0.8)
 		c.createPropChild('dynamic_friction', 0.5)
 		c.createPropChild('rolling_friction', 0.02)
-		
+
 		strut = gear['strut']
 		c.createPropChild('spring_coeff', strut.spring_coeff, 'N/M')
 		c.createPropChild('damping_coeff', strut.damping_coeff, 'N/M/SEC')
-		
+
 		if gear['gear'].steering_type == 'FIXED':
 			max_steer = 0
 		elif gear['gear'].steering_type == 'CASTERED':
@@ -237,47 +250,47 @@ class Exporter(bpy.types.Operator, ExportHelper):
 		else:
 			max_steer = gear['gear'].max_steer
 		c.createPropChild('max_steer', max_steer, 'DEG')
-		
+
 		c.createPropChild('brake_group', gear['gear'].brake_group)
 		c.createPropChild('retractable', 1)
-		
+
 		self.exp_anim.addGear(gear, self.gear_index)
 		self.gear_index += 1
-	
+
 	def exportDrivers(self, ob, matrix_world):
-		
+
 		if not ob.animation_data:
 			return
 
 		# object center in world coordinates
 		center = matrix_world.to_translation()
-		
+
 		for driver in ob.animation_data.drivers:
 			# get the animation axis in world coordinate frame
 			# (vector from center to p2)
 			p2 = Vector([0,0,0])
 			p2[ driver.array_index ] = 1
-			
+
 			axis = matrix_world * p2 - center
 			prop = None
 			factor = 1
 			offset = 0
 			table = None
-			
+
 			for var in driver.driver.variables:
 				if var.type == 'SINGLE_PROP':
 					if len(var.targets) != 1:
 						raise RuntimeError('SINGLE_PROP: wrong target count', var.targets)
 				else:
 					raise RuntimeError('Exporting ' + var.type + ' not supported yet!')
-			
+
 				tar = var.targets[0]
 				if tar.id_type in ['OBJECT', 'SCENE', 'WORLD']:
 					prop = var.targets[0].data_path.strip('["]')
-			
+
 			if not prop:
 				raise RuntimeError('No property!')
-			
+
 			if len(driver.keyframe_points):
 				cur_val = getattr(ob, driver.data_path)[driver.array_index]
 				table = [[k.co[0], k.co[1] - cur_val] for k in driver.keyframe_points]
@@ -286,18 +299,18 @@ class Exporter(bpy.types.Operator, ExportHelper):
 					if mod.type != 'GENERATOR':
 						print('Driver: modifier type=' + mod.type + ' not supported yet!')
 						continue
-					
+
 					if mod.poly_order != 1:
 						print('Driver: polyorder != 1 not supported yet!')
 						continue
-					
+
 					factor = mod.coefficients[1]
-					
+
 					# we don't need to get the offset coefficient as blender already has
 					# applied it to the model for us. We need just to remove the offset
 					# introduced by the current value of the property (if not zero)
 					offset = -tar.id[prop] * factor
-				
+
 			if driver.data_path == 'rotation_euler':
 				if table:
 					table = [[k[0], round(math.degrees(k[1]), 1)] for k in table]
@@ -310,10 +323,10 @@ class Exporter(bpy.types.Operator, ExportHelper):
 			else:
 				print('Exporting ' + driver.data_path + ' not supported yet!')
 				continue
-			
+
 			# TODO check for real gear index
 			prop = prop.replace('/gear/', 'gear/gear[0]/')
-			
+
 			if table:
 				self.exp_anim.addAnimation(
 					anim_type,
@@ -333,7 +346,55 @@ class Exporter(bpy.types.Operator, ExportHelper):
 					factor = factor,
 					offset = offset
 				)
-				
+
+
+	def exportConstraints(self):
+		for ob in self.constraint_objs:
+			for c in ob.constraints:
+				if c.influence != 1.0:
+					print('Constraint influence != 1.0 ignored.')
+
+				if c.type == 'LOCKED_TRACK':
+					self.exportLockedTrack(ob, c)
+				else:
+					print('Exporting ' + c.type + ' not supported yet!')
+
+	def axisFromString(self, name):
+		if name.endswith('_X'):
+			axis = Vector([1,0,0])
+		elif name.endswith('_Y'):
+			axis = Vector([0,1,0])
+		elif name.endswith('_Z'):
+			axis = Vector([0,0,1])
+		else:
+			raise RuntimeError('unknown axis: ' + name)
+
+		if name[:-2].endswith('NEGATIVE'):
+			return -axis
+		else:
+			return axis
+
+	def exportLockedTrack(self, ob, c):
+		if c.target == '':
+			print('Constraint target empty!')
+			return
+		if c.subtarget != '':
+			print('Constraint subtarget/Vertex Group ignored.')
+
+		matrix_world = self.world_matrices[ob.name]
+		matrix_local = ob.matrix_local.to_3x3()
+
+		# compensate for current effect of constraint on object
+		lock_axis = matrix_local * self.axisFromString(c.lock_axis)
+		track_axis = matrix_local * self.axisFromString(c.track_axis)
+
+		anim = self.exp_anim.addAnimation('locked-track', ob)
+		anim.createCenterChild('center', matrix_world.to_translation())
+		anim.createVectorChild('lock-axis', lock_axis)
+		anim.createVectorChild('track-axis', track_axis)
+		anim.createPropChild('target-name', c.target.name)
+		anim.createCenterChild('target-center', self.world_matrices[c.target.name].to_translation())
+
 	def exportPickable(self, ob):
 		props = ob.fgfs.clickable
 
@@ -347,13 +408,13 @@ class Exporter(bpy.types.Operator, ExportHelper):
 		binding.createChild('property', prop)
 		if props.action in ['property-assign']:
 			binding.createChild('value', ob.name)
-	
+
 	def exportLight(self, ob, tf):
 		if ob.data.type != 'SPOT':
 			return
-		
+
 		return
-		
+
 		m = self.exp_anim.model.createChild('model')
 		m.createPropChild('path', "Aircraft/Generic/Lights/light-cone.xml")
 		m.createPropChild('name', ob.name)
@@ -361,13 +422,13 @@ class Exporter(bpy.types.Operator, ExportHelper):
 		o.createPropChild('pitch-deg', -5)
 		p = m.createChild('overlay').createChild('params')
 		p.createPropChild('switch', "/controls/lighting/landing-lights")
-		
+
 	def checkTransparency(self, ob):
 		is_transparent = False
 		for slot in ob.material_slots:
 			if slot.material and slot.material.use_transparency:
 				is_transparent = True
 				break
-			
+
 		if is_transparent:
 			self.exp_anim.addTransparentObject(ob)
