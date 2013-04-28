@@ -153,16 +153,11 @@ class Exporter(bpy.types.Operator, ExportHelper):
 	def parseLevel( self,
 									objects,
 									ignore_select = False,
-									parent_tf = Matrix() ):
+									local_transform = Matrix() ):
 		'''
 		Parse a level in the object hierarchy
 		'''
 		for ob in objects:
-
-			matrix_world = parent_tf
-			if ob.parent != None:
-				matrix_world *= ob.matrix_parent_inverse
-			matrix_world *= ob.matrix_basis
 
 			# Objects from libraries don't have the select flag set even if their
 			# proxy is selected. We therefore consider all objects from libraries as
@@ -170,7 +165,7 @@ class Exporter(bpy.types.Operator, ExportHelper):
 			# proxy should be exported.
 			if ob.is_visible(self.context.scene) and (ob.select or ignore_select):
 
-				self.exportObject(ob, matrix_world)
+				self.exportObject(ob, local_transform)
 
 				# We need to check for dupligroups first as every type of object can be
 				# converted to a dupligroup without removing the data from the old type.
@@ -178,10 +173,10 @@ class Exporter(bpy.types.Operator, ExportHelper):
 					children = [child for child in ob.dupli_group.objects
 					                            if not child.parent
 					                            or not child.parent.name in ob.dupli_group.objects]
-					self.parseLevel(children, True, matrix_world)
+					self.parseLevel(children, True, local_transform * ob.matrix_world)
 
 			if len(ob.children):
-				self.parseLevel(ob.children, ignore_select, matrix_world)
+				self.parseLevel(ob.children, ignore_select, local_transform)
 
 	def exportObject(self, ob, tf):
 		self.checkTransparency(ob)
@@ -197,9 +192,11 @@ class Exporter(bpy.types.Operator, ExportHelper):
 
 		if ob.constraints:
 			self.constraint_objs.append(ob)
+		if ob.parent_type == 'BONE':
+			self.bone_objs.setdefault(ob.parent,[]).append(ob)
 
 		# store world matrix (eg. needed for tracking constraints)
-		self.world_matrices[ob.name] = tf
+		self.world_matrices[ob.name] = tf * ob.matrix_world
 
 	def execute(self, context):
 		t = time.mktime(datetime.datetime.now().timetuple())
@@ -209,10 +206,12 @@ class Exporter(bpy.types.Operator, ExportHelper):
 		self.ground_reactions = util.XMLDocument('ground_reactions')
 		self.context = context
 		self.constraint_objs = []
+		self.bone_objs = {}
 		self.world_matrices = {}
 
 		self.parseLevel([ob for ob in bpy.data.objects if ob.parent == None and not ob.library])
 		self.exportConstraints()
+		self.exportBones()
 
 		f = open(self.filepath, 'w')
 		self.ground_reactions.writexml(f, "", "\t", "\n")
@@ -257,11 +256,12 @@ class Exporter(bpy.types.Operator, ExportHelper):
 		self.exp_anim.addGear(gear, self.gear_index)
 		self.gear_index += 1
 
-	def exportDrivers(self, ob, matrix_world):
+	def exportDrivers(self, ob, tf):
 
 		if not ob.animation_data:
 			return
 
+		matrix_world = tf * ob.matrix_world
 		# object center in world coordinates
 		center = matrix_world.to_translation()
 
@@ -359,6 +359,59 @@ class Exporter(bpy.types.Operator, ExportHelper):
 				else:
 					print('Exporting ' + c.type + ' not supported yet!')
 
+	def exportBones(self):
+		for arm, obs in self.bone_objs.items():
+			print('export bone: ' + arm.name + ", " + str([ob.name for ob in obs]))
+
+			bones = arm.pose.bones
+			if len(bones) != 2:
+				print("Exporting armature with != 2 bones not supported!")
+				return
+			if    len(bones[0].constraints) != 0 \
+				 or len(bones[1].constraints) != 1 \
+				 or bones[1].constraints[0].type != 'IK':
+				print("Exporting armature: only single IK constraint on second bone supported!")
+				return
+
+			ik = bones[1].constraints[0]
+			target = ik.target
+			target_center = self.world_matrices[target.name].to_translation()
+			print(target.type)
+			while target and target.type not in ['MESH', 'LATTICE', 'SURFACE', 'CURVE', 'GROUP']:
+				print('get parent: ' + target.name)
+				target = target.parent
+			if not target:
+				print("Exporting armature: no valid IK target (parent) found!")
+				return
+
+			ob = None
+			slave_name = None
+			for child in arm.children:
+				print('child: ' + child.name + ' -> ' + child.parent_bone)
+				if child.parent_bone == bones[0].name:
+					ob = child
+				elif child.parent_bone == bones[1].name:
+					slave_name = child.name
+
+			matrix_world = self.world_matrices[arm.name]
+			matrix_local = ob.matrix_local.to_3x3()
+			slave_center = (matrix_world * bones[1].matrix).to_translation()
+
+			# compensate for current effect of constraint on object
+			lock_axis = matrix_local * self.axisFromString('LOCK_Y')
+			track_axis = matrix_local * self.axisFromString('TRACK_X')
+
+			anim = self.exp_anim.addAnimation('locked-track', ob)
+			anim.createCenterChild('center', matrix_world.to_translation())
+			anim.createVectorChild('lock-axis', lock_axis)
+			anim.createVectorChild('track-axis', track_axis)
+			anim.createPropChild('target-name', target.name)
+			anim.createCenterChild('target-center', target_center)
+
+			if slave_name:
+				anim.createPropChild('slave-name', slave_name)
+			anim.createCenterChild('slave-center', slave_center)
+
 	def axisFromString(self, name):
 		if name.endswith('_X'):
 			axis = Vector([1,0,0])
@@ -412,8 +465,6 @@ class Exporter(bpy.types.Operator, ExportHelper):
 	def exportLight(self, ob, tf):
 		if ob.data.type != 'SPOT':
 			return
-
-		return
 
 		m = self.exp_anim.model.createChild('model')
 		m.createPropChild('path', "Aircraft/Generic/Lights/light-cone.xml")
