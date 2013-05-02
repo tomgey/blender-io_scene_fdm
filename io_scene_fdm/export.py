@@ -320,6 +320,8 @@ class Exporter(bpy.types.Operator, ExportHelper):
 				anim_type = 'rotate'
 			elif driver.data_path == 'location':
 				anim_type = 'translate'
+			elif driver.data_path == 'hide':
+			  anim_type = 'select'
 			else:
 				print('Exporting ' + driver.data_path + ' not supported yet!')
 				continue
@@ -428,7 +430,8 @@ class Exporter(bpy.types.Operator, ExportHelper):
 			return axis
 
 	def exportLockedTrack(self, ob, c):
-		if c.target == '':
+		print(ob.name, c)
+		if not c.target:
 			print('Constraint target empty!')
 			return
 		if c.subtarget != '':
