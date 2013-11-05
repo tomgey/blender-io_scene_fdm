@@ -4,6 +4,7 @@ Write aircraft data to file(s)
 @author: tom
 '''
 import math
+from collections import OrderedDict
 from mathutils import Matrix, Vector
 from os import path
 
@@ -201,12 +202,13 @@ class Exporter(bpy.types.Operator, ExportHelper):
 	def execute(self, context):
 		t = time.mktime(datetime.datetime.now().timetuple())
 
+		self.device_root = ""
 		self.gear_index = 0
 		self.exp_anim = AnimationsFGFS()
 		self.ground_reactions = util.XMLDocument('ground_reactions')
 		self.context = context
 		self.constraint_objs = []
-		self.bone_objs = {}
+		self.bone_objs = OrderedDict()
 		self.world_matrices = {}
 
 		self.parseLevel([ob for ob in bpy.data.objects if ob.parent == None and not ob.library])
