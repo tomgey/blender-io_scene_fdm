@@ -396,12 +396,20 @@ class Exporter(bpy.types.Operator, ExportHelper):
 					slave_name = child.name
 
 			matrix_world = self.world_matrices[arm.name]
-			matrix_local = ob.matrix_local.to_3x3()
+			matrix_world_3x3 = matrix_world.to_3x3()
 			slave_center = (matrix_world * bones[1].matrix).to_translation()
 
+			if not bones[0].lock_ik_x:
+				lock_axis = bones[0].x_axis
+			elif not bones[0].lock_ik_y:
+				# TODO check if y-axis needs to be inverted or not
+				lock_axis = -bones[0].y_axis
+			else:
+				lock_axis = -bones[0].z_axis
+
 			# compensate for current effect of constraint on object
-			lock_axis = matrix_local * self.axisFromString('LOCK_Y')
-			track_axis = matrix_local * self.axisFromString('TRACK_X')
+			lock_axis = matrix_world_3x3 * lock_axis
+			track_axis = matrix_world_3x3 * bones[0].vector.normalized()
 
 			anim = self.exp_anim.addAnimation('locked-track', ob)
 			anim.createCenterChild('center', matrix_world.to_translation())
