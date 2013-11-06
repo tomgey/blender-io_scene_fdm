@@ -401,17 +401,28 @@ class Exporter(bpy.types.Operator, ExportHelper):
 			matrix_world_3x3 = matrix_world.to_3x3()
 			slave_center = (matrix_world * bones[1].matrix).to_translation()
 
+			# Calculate lock axis based on the given rotation applied by blender. This will only work
+			# if there is already a non-zero rotation applied. Straight bones in a line will not work
+			# without a lock axis set manually.
+			lock_axis_calc = (bones[1].tail - bones[0].head).cross(bones[0].tail - bones[0].head)
+
 			lock = [bones[0].lock_ik_x, bones[0].lock_ik_y, bones[0].lock_ik_z]
 			if not any(lock):
-				lock_axis = (bones[1].tail - bones[0].head).cross(bones[0].tail - bones[0].head)
+				lock_axis = lock_axis_calc
 			else:
 				if not lock[0]:
 					lock_axis = bones[0].x_axis
 				elif not lock[1]:
-					# TODO check if y-axis needs to be inverted or not
-					lock_axis = -bones[0].y_axis
+					lock_axis = bones[0].y_axis
 				else:
-					lock_axis = -bones[0].z_axis
+					lock_axis = bones[0].z_axis
+
+				# compare with the rotation calculated on what rotation blender already has applied
+				if lock_axis * lock_axis_calc < 0:
+					# invert if blender has rotated into the other direction. I don't exactly know how
+					# blender determines the direction of the rotation, but there are some rules which
+					# somehow try to optimize the rotation.
+					lock_axis *= -1
 
 			# compensate for current effect of constraint on object
 			lock_axis = matrix_world_3x3 * lock_axis.normalized()
