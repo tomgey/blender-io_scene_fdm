@@ -271,7 +271,7 @@ class Exporter(bpy.types.Operator, ExportHelper):
 			# get the animation axis in world coordinate frame
 			# (vector from center to p2)
 			p2 = Vector([0,0,0])
-			p2[ driver.array_index ] = 1
+			p2[ driver.array_index ] = ob.scale[ driver.array_index ]
 
 			axis = matrix_world * p2 - center
 			prop = None
