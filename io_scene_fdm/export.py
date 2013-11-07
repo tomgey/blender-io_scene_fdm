@@ -406,13 +406,13 @@ class Exporter(bpy.types.Operator, ExportHelper):
 			# without a lock axis set manually.
 			lock_axis_calc = (bones[1].tail - bones[0].head).cross(bones[0].tail - bones[0].head)
 
-			lock = [bones[0].lock_ik_x, bones[0].lock_ik_y, bones[0].lock_ik_z]
-			if not any(lock):
+			lock = [[b.lock_ik_x, b.lock_ik_y, b.lock_ik_z] for b in bones]
+			if not any(lock[0]):
 				lock_axis = lock_axis_calc
 			else:
-				if not lock[0]:
+				if not lock[0][0]:
 					lock_axis = bones[0].x_axis
-				elif not lock[1]:
+				elif not lock[0][1]:
 					lock_axis = bones[0].y_axis
 				else:
 					lock_axis = bones[0].z_axis
@@ -438,6 +438,11 @@ class Exporter(bpy.types.Operator, ExportHelper):
 			if slave_name:
 				anim.createPropChild('slave-name', slave_name)
 			anim.createCenterChild('slave-center', slave_center)
+
+			# Let slave rotate around two axis if 2 axis are unlocked.
+			if lock[1].count(False) == 2:
+				# TODO check if correct axis are locked
+				anim.createPropChild('slave-dof', 2)
 
 	def axisFromString(self, name):
 		if name.endswith('_X'):
