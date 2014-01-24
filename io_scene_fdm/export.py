@@ -5,7 +5,7 @@ Write aircraft data to file(s)
 '''
 import math
 from collections import OrderedDict
-from mathutils import Matrix, Vector
+from mathutils import Euler, Matrix, Vector
 from os import path
 
 ft2m = 0.3048
@@ -267,11 +267,14 @@ class Exporter(bpy.types.Operator, ExportHelper):
 		# object center in world coordinates
 		center = matrix_world.to_translation()
 
+		[loc, rot, scale] = ob.matrix_basis.decompose()
+		rot = rot.to_euler()
+
 		for driver in ob.animation_data.drivers:
 			# get the animation axis in world coordinate frame
 			# (vector from center to p2)
 			p2 = Vector([0,0,0])
-			p2[ driver.array_index ] = ob.scale[ driver.array_index ]
+			p2[ driver.array_index ] = 1
 
 			axis = matrix_world * p2 - center
 			prop = None
@@ -320,6 +323,14 @@ class Exporter(bpy.types.Operator, ExportHelper):
 					factor = math.degrees(factor)
 					offset = math.degrees(offset)
 				anim_type = 'rotate'
+
+				# compensate for rotations applied on export
+				inv_rot = [0, 0, 0]
+				for i in range(3):
+					if i < driver.array_index:
+						inv_rot[i] = -rot[i]
+				axis = matrix_world * Euler(inv_rot, 'ZYX').to_matrix().to_4x4() * p2 - center
+
 			elif driver.data_path == 'location':
 				anim_type = 'translate'
 			elif driver.data_path == 'hide':
